@@ -8,9 +8,15 @@ ui/node_modules/
 *.dSYM/
 *.app/
 
-# Tauri 自动生成的 icon 全套（icons/icon.png 保留，其余由 cargo tauri icon 生成）
+# Tauri 图标：icon.png 是源，icon.ico（Windows）/icon.icns（macOS）是打包必需，
+# 都入库；其余平台尺寸（Android 等）由 cargo tauri icon 按需生成，不入库。
 shells/tauri/src-tauri/icons/*
 !shells/tauri/src-tauri/icons/icon.png
+!shells/tauri/src-tauri/icons/icon.ico
+!shells/tauri/src-tauri/icons/icon.icns
+!shells/tauri/src-tauri/icons/32x32.png
+!shells/tauri/src-tauri/icons/128x128.png
+!shells/tauri/src-tauri/icons/128x128@2x.png
 
 # 模型权重一律不入库（仓库只放清单与元数据）
 *.gguf
