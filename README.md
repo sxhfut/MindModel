@@ -120,7 +120,9 @@ cargo build --release
 
 macOS 已在 Apple M5 Max / 128 GB / macOS 27.0.1 上实跑验证，包含带宽实测、GGUF 导入、Ollama 注册、真实生成测速、以及智能体的工具调用（qwen2.5:14b 的 function calling 端到端跑通）。
 
-Rust core 的跨平台探测按 `cfg(target_os)` 分文件，Windows（DXGI + NVML）和 Linux（sysfs + NVML）的代码路径**尚未在实机上跑过**。国产平台（鲲鹏、飞腾、龙芯、海光）只做到代码能编译，没有任何实测数据。界面上区分「未验证 / 可运行 / 已实测」三档，不把"能编译"说成"支持"。Tauri 壳是骨架，未实机验证。
+跨平台桌面壳（`shells/tauri` + `ui/`）已可编译：本机 `cargo tauri build` 产出 11MB 的 macOS 应用；Windows 与 Linux 的 `.exe` / `.deb` / `.AppImage` 由 CI 在对应 runner 上编译（`.github/workflows/release.yml`），产物上传为 artifact。**但 Windows/Linux 尚未在真实硬件上打开运行过**，探测层（DXGI/NVML、sysfs/NVML）与打包结果需要真机点开验证。
+
+Rust core 的跨平台探测按 `cfg(target_os)` 分文件，国产平台（鲲鹏、飞腾、龙芯、海光）只做到代码能编译，没有任何实测数据。界面上区分「未验证 / 可运行 / 已实测」三档，不把"能编译"说成"支持"。
 
 内置候选数在两边暂时不一致：Swift 版 79 条，Rust core 57 条，后者是早期截取的子集。`data/models.toml`（79 条）已作为单一数据源生成，Swift 的 `Catalog.swift` 是权威源，改清单后跑 `python3 tools/gen_models_toml.py` 重新生成。
 
@@ -139,7 +141,8 @@ MindModel/
 ├── rust/
 │   └── crates/{core,probe,backend,cli}
 ├── shells/
-│   ├── tauri/           跨平台桌面壳（骨架，未实机验证）
+│   ├── tauri/           跨平台桌面壳（macOS 可编译，Win/Linux 靠 CI）
+│   ├── ui/              共享前端（Vite + 原生 JS，两壳共用）
 │   └── browser/         无 GUI 平台的浏览器兜底（未开始）
 ├── data/models.toml     模型清单单一数据源（79 条）
 ├── tools/gen_models_toml.py  从 Catalog.swift 生成 models.toml
