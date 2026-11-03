@@ -2,6 +2,8 @@
 
 这台机器能跑哪个模型、跑多快、为什么是它。
 
+> **🌐 官网**：https://sxhfut.github.io/MindModel/ ｜ **📦 下载**：见 [Releases](https://github.com/sxhfut/MindModel/actions)（三平台安装包）｜ **🖥 无需安装**：`cargo run -p mindmodel-server` 后用浏览器打开
+
 本地模型的选型有个常见麻烦：网上按「显存够不够」列的清单，把权重体积当成唯一门槛，忽略了 KV cache、上下文长度和内存带宽。照单下了一个 70 GB 的模型，上了 30K 上下文才发现余量吃掉一半，生成速度 4 tok/s。
 
 MindModel 把选型拆成能算的几步：预算、需求、上下文、速度、能力分。给定机器和任务，给出一个结论，以及结论背后的每一个数字。所有计算在本机完成，不联网。
@@ -14,7 +16,7 @@ $ mindmodel scan
 预算      : 102.4 GB
 带宽实测  : 344 GB/s（峰值；中位 336 · 最低 330）
 
-可承载 57/57 个内置候选；建议档位 ≈117B-A5B
+可承载 78/79 个内置候选；建议档位 ≈117B-A5B
 ```
 
 ## 界面
@@ -83,6 +85,33 @@ KV     = 2 × 层数 × KV头数 × head_dim × 2B × 上下文
 
 模型清单内置 79 条，覆盖十类：通用对话、代码、推理、多模态理解、Agent、轻量、图像生成、语音、向量、重排。只有可对话的类别参与对话选型——把图像生成模型混进推荐列表，会让它拿下"首选"并打印一个编造出来的 tok/s。
 
+## 架构
+
+一套算法，三种壳。内核是 Rust 纯逻辑，外层 Tauri 桌面 / 浏览器兜底 / CLI 三种入口共用同一份前端：
+
+```
+        ┌─ Tauri 桌面 ──┐
+        │ macOS/Win/Linux│
+        ├─ 浏览器兜底 ──┤      ┌──────────────────────────────┐
+        │ 麒麟/龙芯/服务器│─────▶│  共享前端 ui/                 │
+        └─ 命令行 CLI ──┘      │  (Vite + 原生 JS)            │
+                               └──────────────┬───────────────┘
+                                              │
+              ┌───────────────────────────────▼───────────────┐
+              │  Rust 内核（零外部依赖）                       │
+              │  core   · gguf / advisor / catalog / task     │
+              │  probe  · 硬件探测（按 target 编译）           │
+              │  backend· Ollama / llama.cpp / MLX 抽象       │
+              │  server · 本地 HTTP（/api/scan·engines·advise）│
+              └───────────────┬───────────────────────────────┘
+                              │
+              ┌───────────────▼───────────────┐
+              │  data/models.toml · 79 条清单  │
+              └───────────────────────────────┘
+```
+
+算法全在本地跑，不联网。Swift 版（macOS 桌面）与 Rust 版是同一套公式的独立实现，用断言维持两端选型逐字一致。
+
 ## 命令行
 
 Rust 版是同一套算法的独立实现，用于交叉校验和 CI：
@@ -98,6 +127,8 @@ mindmodel engines                           检测本机推理后端
 
 `--bandwidth` 与 `--budget` 用于离线复算：拿到别人的报告时，可以指定同样的输入验证结果。
 
+无 GUI 平台还有浏览器兜底：`cargo run -p mindmodel-server` 起本地 HTTP 服务，浏览器打开 `http://127.0.0.1:8462` 即用（见 `shells/browser/README.md`）。
+
 ## 编译
 
 macOS 桌面版（SwiftUI，无第三方依赖）：
@@ -110,7 +141,7 @@ Rust 核心与命令行：
 
 ```bash
 cd rust
-cargo test          # 24 个测试（22 core + 2 backend），其中 5 条钉住与 Swift 首次选型逐字一致
+cargo test          # 26 个测试（24 core + 2 backend），其中 5 条钉住与 Swift 首次选型逐字一致
 cargo build --release
 ```
 
@@ -122,9 +153,11 @@ macOS 已在 Apple M5 Max / 128 GB / macOS 27.0.1 上实跑验证，包含带宽
 
 跨平台桌面壳（`shells/tauri` + `ui/`）已可编译：本机 `cargo tauri build` 产出 11MB 的 macOS 应用；Windows 与 Linux 的 `.exe` / `.deb` / `.AppImage` 由 CI 在对应 runner 上编译（`.github/workflows/release.yml`），产物上传为 artifact。**但 Windows/Linux 尚未在真实硬件上打开运行过**，探测层（DXGI/NVML、sysfs/NVML）与打包结果需要真机点开验证。
 
+无 GUI 平台的浏览器兜底壳（`shells/browser` + `rust/crates/server`）已在本机端到端跑通：`mindmodel-serve` 起本地 HTTP 服务，暴露 scan/engines/models/advise/task 五个 JSON 端点 + 静态文件，浏览器打开即用。这是国产平台（鲲鹏/飞腾/龙芯/海光）最可行的入口。
+
 Rust core 的跨平台探测按 `cfg(target_os)` 分文件，国产平台（鲲鹏、飞腾、龙芯、海光）只做到代码能编译，没有任何实测数据。界面上区分「未验证 / 可运行 / 已实测」三档，不把"能编译"说成"支持"。
 
-内置候选数在两边暂时不一致：Swift 版 79 条，Rust core 57 条，后者是早期截取的子集。`data/models.toml`（79 条）已作为单一数据源生成，Swift 的 `Catalog.swift` 是权威源，改清单后跑 `python3 tools/gen_models_toml.py` 重新生成。
+内置候选两边一致：Swift 版与 Rust core 均为 79 条。`data/models.toml`（79 条）已作为单一数据源生成，Swift 的 `Catalog.swift` 是权威源，改清单后跑 `python3 tools/gen_models_toml.py` 重新生成。
 
 ## 目录
 
@@ -139,14 +172,14 @@ MindModel/
 │   ├── App.swift        状态、并发、Ollama 交互、agent 循环
 │   └── Views.swift      八个页面
 ├── rust/
-│   └── crates/{core,probe,backend,cli}
+│   └── crates/{core,probe,backend,cli,server}
 ├── shells/
 │   ├── tauri/           跨平台桌面壳（macOS 可编译，Win/Linux 靠 CI）
 │   ├── ui/              共享前端（Vite + 原生 JS，两壳共用）
-│   └── browser/         无 GUI 平台的浏览器兜底（未开始）
+│   └── browser/         无 GUI 平台的浏览器兜底（mindmodel-serve 本地 HTTP）
 ├── data/models.toml     模型清单单一数据源（79 条）
 ├── tools/gen_models_toml.py  从 Catalog.swift 生成 models.toml
-├── docs/shots/          界面截图
+├── docs/                界面截图 + GitHub Pages 主页
 ├── DESIGN.md            跨平台设计与算法说明
 └── build.sh
 ```

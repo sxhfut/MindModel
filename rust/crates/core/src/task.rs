@@ -106,6 +106,61 @@ pub enum WorkTask {
 }
 
 impl WorkTask {
+    /// 全部任务，固定顺序（与 Swift 版 WorkTask.allCases 一致）
+    pub fn all() -> [WorkTask; 12] {
+        [
+            WorkTask::Paper,
+            WorkTask::LitReview,
+            WorkTask::Coding,
+            WorkTask::Debugging,
+            WorkTask::DataAnalysis,
+            WorkTask::PeerReview,
+            WorkTask::Teaching,
+            WorkTask::Translation,
+            WorkTask::AffectExp,
+            WorkTask::Daily,
+            WorkTask::Vision,
+            WorkTask::Summarize,
+        ]
+    }
+
+    /// CLI / API 用的短键（paper/lit/code/...），与 Swift 侧 key 一致
+    pub fn key(&self) -> &'static str {
+        match self {
+            WorkTask::Paper => "paper",
+            WorkTask::LitReview => "lit",
+            WorkTask::Coding => "code",
+            WorkTask::Debugging => "debug",
+            WorkTask::DataAnalysis => "data",
+            WorkTask::PeerReview => "review",
+            WorkTask::Teaching => "teach",
+            WorkTask::Translation => "trans",
+            WorkTask::AffectExp => "affect",
+            WorkTask::Daily => "daily",
+            WorkTask::Vision => "vision",
+            WorkTask::Summarize => "summary",
+        }
+    }
+
+    /// 从短键解析任务；返回 None 表示不认识的键（调用方自行决定忽略或报错）
+    pub fn from_key(name: &str) -> Option<WorkTask> {
+        Some(match name.trim() {
+            "paper" => WorkTask::Paper,
+            "lit" | "litreview" => WorkTask::LitReview,
+            "code" | "coding" => WorkTask::Coding,
+            "debug" | "debugging" => WorkTask::Debugging,
+            "data" | "dataanalysis" => WorkTask::DataAnalysis,
+            "review" | "peerreview" => WorkTask::PeerReview,
+            "teach" | "teaching" => WorkTask::Teaching,
+            "trans" | "translation" => WorkTask::Translation,
+            "affect" | "affectexp" => WorkTask::AffectExp,
+            "daily" => WorkTask::Daily,
+            "vision" => WorkTask::Vision,
+            "summary" | "summarize" => WorkTask::Summarize,
+            _ => return None,
+        })
+    }
+
     pub fn label(&self) -> &'static str {
         match self {
             WorkTask::Paper => "论文写作",

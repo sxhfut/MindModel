@@ -1,0 +1,14 @@
+[package]
+name = "mindmodel-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "mindmodel-serve"
+path = "src/main.rs"
+
+[dependencies]
+mindmodel-core = { path = "../core" }
+mindmodel-probe = { path = "../probe" }
+mindmodel-backend = { path = "../backend" }

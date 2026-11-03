@@ -254,21 +254,7 @@ fn engines() {
 
 
 fn parse_task(name: &str) -> Option<WorkTask> {
-    Some(match name.trim() {
-        "paper" => WorkTask::Paper,
-        "lit" | "litreview" => WorkTask::LitReview,
-        "code" | "coding" => WorkTask::Coding,
-        "debug" | "debugging" => WorkTask::Debugging,
-        "data" | "dataanalysis" => WorkTask::DataAnalysis,
-        "review" | "peerreview" => WorkTask::PeerReview,
-        "teach" | "teaching" => WorkTask::Teaching,
-        "trans" | "translation" => WorkTask::Translation,
-        "affect" | "affectexp" => WorkTask::AffectExp,
-        "daily" => WorkTask::Daily,
-        "vision" => WorkTask::Vision,
-        "summary" | "summarize" => WorkTask::Summarize,
-        _ => return None,
-    })
+    WorkTask::from_key(name)
 }
 
 fn task_cmd(args: &[String]) {

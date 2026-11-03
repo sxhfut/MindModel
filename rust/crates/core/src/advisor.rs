@@ -14,7 +14,10 @@ pub enum Category {
     Vision,
     Agent,
     Light,
+    Image,
+    Speech,
     Embed,
+    Rerank,
 }
 
 impl Category {
@@ -26,8 +29,17 @@ impl Category {
             Category::Vision => "多模态",
             Category::Agent => "Agent",
             Category::Light => "轻量常驻",
+            Category::Image => "图像生成",
+            Category::Speech => "语音",
             Category::Embed => "向量/嵌入",
+            Category::Rerank => "重排",
         }
+    }
+
+    /// 能不能当对话模型用。生成图、语音、向量、重排都是另一类模型，
+    /// 混进对话推荐里会把它们排到"首选"——这是排序错误，不只是显示问题。
+    pub fn chattable(&self) -> bool {
+        !matches!(self, Category::Image | Category::Speech | Category::Embed | Category::Rerank)
     }
 }
 
@@ -362,6 +374,26 @@ mod tests {
     }
 
     #[test]
+    fn catalog_matches_swift_count() {
+        // 与 Swift 版 Sources/Catalog.swift 保持 79 条一致（单一权威源）
+        assert_eq!(MODELS.len(), 79, "Rust catalog 应与 Swift 版 79 条一致");
+    }
+
+    #[test]
+    fn non_chattable_categories_are_excluded_from_task_pool() {
+        // 图像/语音/向量/重排不能当对话模型，任务候选池里不该出现
+        let a = adv();
+        let blend = TaskBlend::single(WorkTask::Daily);
+        for adv in a.task_matches(&blend, 1000) {
+            assert!(
+                adv.model.cat.chattable(),
+                "{} 是非对话分类，不该进任务候选",
+                adv.model.name
+            );
+        }
+    }
+
+    #[test]
     fn need_matches_hand_calculation() {
         // gpt-oss 120B：62.4 权重 + 0.18×16 KV + 1.6 运行时 = 66.9
         let n = adv().need(model("gpt-oss 120B"));
@@ -638,7 +670,7 @@ impl Advisor {
     /// 多模态模型同样是称职的文本模型，按类别乱砍会白白丢掉好候选
     /// （例如 Qwen3-VL 30B-A3B 写作与中文都不弱，不该因为分类是"多模态"就被排除）。
     fn pool_for(&self, blend: &TaskBlend, rep: &mut GateReport) -> Vec<&'static Model> {
-        let base: Vec<&'static Model> = MODELS.iter().filter(|m| m.cat != Category::Embed).collect();
+        let base: Vec<&'static Model> = MODELS.iter().filter(|m| m.cat.chattable()).collect();
         rep.total = base.len();
         let needs_vision = blend.categories().contains(&Category::Vision);
         let pool: Vec<&'static Model> = base

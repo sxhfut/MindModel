@@ -25,3 +25,12 @@ version = "0.1.0"
 dependencies = [
  "mindmodel-core",
 ]
+
+[[package]]
+name = "mindmodel-server"
+version = "0.1.0"
+dependencies = [
+ "mindmodel-backend",
+ "mindmodel-core",
+ "mindmodel-probe",
+]

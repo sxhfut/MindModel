@@ -1,14 +1,14 @@
 # 跨平台壳
 
-一套前端（`ui/`）+ 一套 Rust 后端（`src-tauri/`），编译出三平台桌面应用。
+一套前端（`ui/`）+ 两套后端（Tauri 桌面 / server 浏览器），覆盖从桌面到无 GUI 平台。
 
-## 现状（已从"骨架"推进到"可编译"）
+## 现状
 
 | 目录 | 内容 | 状态 |
 |---|---|---|
 | `tauri/src-tauri/` | Tauri 壳 Rust 侧，暴露 `scan`/`engines`/`advise`/`models` 四个 command | ✅ 本机 `cargo check` 与 `cargo tauri build` 通过 |
-| `ui/` | Vite + 原生 JS 前端，调 Tauri command，两种壳共用 | ✅ 本机 `npm run build` 通过 |
-| `browser/` | 无 GUI 平台的浏览器兜底 | ⏳ 未开始（依赖 P3 server crate） |
+| `ui/` | Vite + 原生 JS 前端，调 Tauri command 或本地 HTTP，两种壳共用 | ✅ 本机 `npm run build` 通过 |
+| `browser/` | 无 GUI 平台的浏览器兜底（`mindmodel-serve` 本地 HTTP） | ✅ 本机端到端跑通（scan/engines/models/advise/task + 静态文件） |
 
 ## 本机已验证
 

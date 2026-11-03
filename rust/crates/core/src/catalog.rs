@@ -57,6 +57,33 @@ pub static MODELS: &[Model] = &[
     Model { name: "Phi-4-mini 3.8B", params_b: 3.82, active_b: 3.82, q4_gb: 3.8, cat: Category::Light, tag: Some("phi4-mini"), kv_1k: 0.06, note: "端侧推理" },
     Model { name: "Qwen3 1.7B", params_b: 1.7, active_b: 1.7, q4_gb: 2.4, cat: Category::Light, tag: Some("qwen3:1.7b"), kv_1k: 0.03, note: "极速，摘要分类" },
     Model { name: "Qwen2.5 1.5B", params_b: 1.54, active_b: 1.54, q4_gb: 2.2, cat: Category::Light, tag: Some("qwen2.5:1.5b"), kv_1k: 0.03, note: "常驻守护" },
+    // —— 多模态理解（看图、读文档、读表格）——
+    Model { name: "Qwen3-VL 235B-A22B", params_b: 235.0, active_b: 22.0, q4_gb: 132.0, cat: Category::Vision, tag: None, kv_1k: 0.22, note: "旗舰视觉，128G 也要留余地" },
+    Model { name: "Qwen2.5-VL 72B", params_b: 72.0, active_b: 72.0, q4_gb: 45.0, cat: Category::Vision, tag: None, kv_1k: 0.25, note: "开源文档理解最强档之一" },
+    Model { name: "InternVL3 38B", params_b: 38.0, active_b: 38.0, q4_gb: 23.0, cat: Category::Vision, tag: None, kv_1k: 0.22, note: "图表与 OCR 见长" },
+    Model { name: "Qwen3-VL 32B", params_b: 32.0, active_b: 32.0, q4_gb: 20.0, cat: Category::Vision, tag: None, kv_1k: 0.20, note: "视觉 + 中文写作都行" },
+    Model { name: "Qwen2.5-VL 32B", params_b: 32.0, active_b: 32.0, q4_gb: 20.0, cat: Category::Vision, tag: None, kv_1k: 0.20, note: "中文表格、发票、截图" },
+    Model { name: "InternVL3 14B", params_b: 14.0, active_b: 14.0, q4_gb: 8.8, cat: Category::Vision, tag: None, kv_1k: 0.16, note: "视觉性价比档" },
+    Model { name: "Llama 3.2 Vision 90B", params_b: 90.0, active_b: 90.0, q4_gb: 55.0, cat: Category::Vision, tag: None, kv_1k: 0.24, note: "大号看图，中文一般" },
+    Model { name: "MiniCPM-V 4.5 9B", params_b: 9.0, active_b: 9.0, q4_gb: 5.6, cat: Category::Vision, tag: None, kv_1k: 0.13, note: "端侧视觉，响应快" },
+    Model { name: "Pixtral 12B", params_b: 12.0, active_b: 12.0, q4_gb: 7.4, cat: Category::Vision, tag: None, kv_1k: 0.16, note: "Mistral 视觉模型" },
+    Model { name: "Molmo 7B", params_b: 7.0, active_b: 7.0, q4_gb: 4.8, cat: Category::Vision, tag: None, kv_1k: 0.13, note: "指认式视觉问答" },
+    Model { name: "Qwen2.5-Omni 7B", params_b: 7.0, active_b: 7.0, q4_gb: 5.2, cat: Category::Vision, tag: None, kv_1k: 0.13, note: "图像 + 音频输入" },
+    // —— 图像生成（要 ComfyUI / stable-diffusion.cpp，Ollama 跑不了）——
+    Model { name: "FLUX.1-schnell", params_b: 12.0, active_b: 12.0, q4_gb: 7.0, cat: Category::Image, tag: None, kv_1k: 0.0, note: "4 步出图，需 ComfyUI 或 sd.cpp" },
+    Model { name: "FLUX.1-dev", params_b: 12.0, active_b: 12.0, q4_gb: 12.0, cat: Category::Image, tag: None, kv_1k: 0.0, note: "质量更好，显存吃得也多" },
+    Model { name: "Qwen-Image 20B", params_b: 20.0, active_b: 20.0, q4_gb: 12.0, cat: Category::Image, tag: None, kv_1k: 0.0, note: "中文文字排版最准" },
+    Model { name: "SDXL", params_b: 3.5, active_b: 3.5, q4_gb: 3.5, cat: Category::Image, tag: None, kv_1k: 0.0, note: "生态最全，插件多" },
+    Model { name: "Wan2.2 T2V A14B", params_b: 14.0, active_b: 14.0, q4_gb: 16.0, cat: Category::Image, tag: None, kv_1k: 0.0, note: "文生视频，慢，占空间" },
+    // —— 语音（whisper.cpp / faster-whisper / TTS 引擎）——
+    Model { name: "Whisper Large v3 Turbo", params_b: 1.55, active_b: 1.55, q4_gb: 1.6, cat: Category::Speech, tag: None, kv_1k: 0.0, note: "多语转写，标配" },
+    Model { name: "Parakeet TDT 0.6B", params_b: 0.6, active_b: 0.6, q4_gb: 0.7, cat: Category::Speech, tag: None, kv_1k: 0.0, note: "英文转写极快" },
+    Model { name: "Kokoro 82M", params_b: 0.082, active_b: 0.082, q4_gb: 0.3, cat: Category::Speech, tag: None, kv_1k: 0.0, note: "轻量 TTS，英文自然" },
+    Model { name: "CosyVoice2 0.5B", params_b: 0.5, active_b: 0.5, q4_gb: 0.5, cat: Category::Speech, tag: None, kv_1k: 0.0, note: "中文 TTS，可克隆音色" },
+    // —— 重排（检索后二次排序）——
+    Model { name: "bge-reranker-v2-m3", params_b: 0.568, active_b: 0.568, q4_gb: 1.1, cat: Category::Rerank, tag: None, kv_1k: 0.0, note: "中英重排，配 bge-m3" },
+    Model { name: "jina-reranker-v2", params_b: 0.278, active_b: 0.278, q4_gb: 0.6, cat: Category::Rerank, tag: None, kv_1k: 0.0, note: "轻量重排" },
+    // —— 向量/嵌入模型（不用于对话，供知识库检索）——
     Model { name: "bge-m3", params_b: 0.568, active_b: 0.568, q4_gb: 1.2, cat: Category::Embed, tag: Some("bge-m3"), kv_1k: 0.02, note: "中英多语，MTEB 通用首选" },
     Model { name: "nomic-embed-text", params_b: 0.137, active_b: 0.137, q4_gb: 0.27, cat: Category::Embed, tag: Some("nomic-embed-text"), kv_1k: 0.01, note: "轻量，长文检索" },
     Model { name: "mxbai-embed-large", params_b: 0.334, active_b: 0.334, q4_gb: 0.65, cat: Category::Embed, tag: Some("mxbai-embed-large"), kv_1k: 0.02, note: "英文检索强" },
