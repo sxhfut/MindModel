@@ -270,7 +270,9 @@ struct Header: View {
                 Text(subtitle).font(.system(size: 12)).foregroundStyle(.secondary)
             }
             Spacer()
-            if let b = s.busy {
+            if s.pullTag != nil {
+                PullProgressBar()
+            } else if let b = s.busy {
                 HStack(spacing: 7) {
                     ProgressView().controlSize(.small)
                     Text(b).font(.system(size: 11.5)).foregroundStyle(.secondary)
@@ -291,6 +293,135 @@ struct Header: View {
         case .bench: return "跳过估算，直接让 Ollama 跑一次"
         case .chat: return "用装好的模型直接对话，可带图片"
         case .agent: return "让模型动手：读文件、搜代码、写文件、跑命令"
+        }
+    }
+}
+
+// MARK: - 拉取进度
+
+/// 顶部常驻的模型下载进度条。放在 Header 的 busy 位置，任意页签都能看到。
+/// 断点续传由 Ollama 原生保证：中断后已下载层保留，重新拉取只补缺失部分。
+struct PullProgressBar: View {
+    @EnvironmentObject var s: AppState
+
+    var body: some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    if s.pullVerifying {
+                        ProgressView().controlSize(.mini)
+                        Text("校验已下载层…（断点续传）")
+                            .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                    } else if let layer = s.pullLayer {
+                        Text(layer.hash.prefix(8))
+                            .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+                        if !layer.done.isEmpty {
+                            Text("\(layer.done)/\(layer.total)")
+                                .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                        }
+                        if !layer.speed.isEmpty {
+                            Text(layer.speed).font(.system(size: 10.5)).foregroundStyle(.secondary)
+                        }
+                        if !layer.eta.isEmpty {
+                            Text("剩 \(layer.eta)").font(.system(size: 10.5)).foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Text(s.busy ?? "拉取中…").font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                }
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.primary.opacity(0.10))
+                        Capsule()
+                            .fill(T.accent)
+                            .frame(width: max(4, geo.size.width * min(1.0, s.pullLayer?.pct ?? 0)))
+                    }
+                }
+                .frame(width: 150, height: 5)
+            }
+            Button {
+                s.cancelPull()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("取消拉取（已下载部分保留，可续传）")
+        }
+    }
+}
+
+// MARK: - 拉取按钮
+
+/// 统一的「拉取」按钮。该 tag 正在拉取时显示「拉取中」并禁止重复点击；
+/// 拉取是 Ollama 原生断点续传，中断后重新点即可续传，不会重下。
+struct PullButton: View {
+    @EnvironmentObject var s: AppState
+    let tag: String
+    var prominent = false
+
+    var body: some View {
+        if s.pullTag == tag {
+            Button {
+                s.cancelPull()
+            } label: {
+                HStack(spacing: 4) {
+                    ProgressView().controlSize(.mini)
+                    Text("拉取中").font(.system(size: 11.5))
+                }
+            }
+            .buttonStyle(.bordered).controlSize(.small)
+            .help("正在拉取 \(tag)。点击取消（已下载层保留）")
+        } else {
+            if prominent {
+                Button("拉取") { s.runPull(tag) }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(s.pullTag != nil)
+                    .help("ollama pull \(tag)")
+            } else {
+                Button("拉取") { s.runPull(tag) }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(s.pullTag != nil)
+                    .help("ollama pull \(tag)")
+            }
+        }
+    }
+}
+
+// MARK: - 文生图后端按钮
+
+/// 图像模型的后端引导按钮。Ollama 跑不了文生图，需要 ComfyUI 或 stable-diffusion.cpp。
+/// 已装则引导去引擎页查看，未装则给安装入口，不虚标「点一下出图」。
+struct ImageBackendButton: View {
+    @EnvironmentObject var s: AppState
+
+    var body: some View {
+        if s.hasImageBackend {
+            let names = s.imageBackends.map { $0.name }.joined(separator: " / ")
+            Button("后端已就绪") {
+                s.tab = .installed
+            }
+            .buttonStyle(.bordered).controlSize(.small)
+            .help("已检测到 \(names)，去「已装与引擎」查看")
+        } else {
+            Menu {
+                Button("安装 ComfyUI") {
+                    if let u = URL(string: "https://www.comfy.org") { NSWorkspace.shared.open(u) }
+                }
+                Button("安装 stable-diffusion.cpp") {
+                    if let u = URL(string: "https://github.com/leejet/stable-diffusion.cpp") { NSWorkspace.shared.open(u) }
+                }
+            } label: {
+                Text("需图后端")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(T.warn)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Ollama 不跑文生图；需先装 ComfyUI 或 stable-diffusion.cpp 作为独立后端")
         }
     }
 }
@@ -505,9 +636,9 @@ struct RecommendView: View {
                             Badge(text: pair.0.level.label, color: fitColor(pair.0.level))
                             Spacer()
                             if let tag = pair.0.model.tag {
-                                Button("拉取") { s.runPull(tag) }
-                                    .buttonStyle(.bordered).controlSize(.small)
-                                    .disabled(s.busy != nil)
+                                PullButton(tag: tag)
+                            } else if pair.0.model.cat == .image {
+                                ImageBackendButton()
                             } else {
                                 Button("HF 搜索") { s.openHF(pair.0.model.name) }
                                     .buttonStyle(.bordered).controlSize(.small)
@@ -671,10 +802,9 @@ struct ModelRow: View {
                 }
 
                 if let tag = a.model.tag {
-                    Button("拉取") { s.runPull(tag) }
-                        .buttonStyle(.bordered).controlSize(.small)
-                        .disabled(s.busy != nil)
-                        .help("ollama pull \(tag)")
+                    PullButton(tag: tag)
+                } else if a.model.cat == .image {
+                    ImageBackendButton()
                 } else {
                     Button("HF 搜索") { s.openHF(a.model.name) }
                         .buttonStyle(.bordered).controlSize(.small)
@@ -798,15 +928,15 @@ struct TaskView: View {
                             Badge(text: "能力 \(String(format: "%.2f", s.capabilityScore(best.model, b)))/5")
                             Spacer()
                             if let tag = best.model.tag {
-                                Button("拉取") { s.runPull(tag) }
-                                    .buttonStyle(.borderedProminent).controlSize(.small)
-                                    .disabled(s.busy != nil)
+                                PullButton(tag: tag, prominent: true)
                                 Button("复制命令") {
                                     NSPasteboard.general.clearContents()
                                     NSPasteboard.general.setString("ollama pull \(tag)", forType: .string)
                                     s.toast = "已复制：ollama pull \(tag)"
                                 }
                                 .buttonStyle(.bordered).controlSize(.small)
+                            } else if best.model.cat == .image {
+                                ImageBackendButton()
                             } else {
                                 Button("HF 搜索") { s.openHF(best.model.name) }
                                     .buttonStyle(.bordered).controlSize(.small)

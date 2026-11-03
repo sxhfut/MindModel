@@ -296,6 +296,32 @@ enum Runtime {
         list.append(Engine(name: "Apple MLX", path: "系统", version: "随 macOS", ready: true,
                            installURL: "https://github.com/ml-explore/mlx",
                            role: "Apple 官方张量框架，M 系列最快路径"))
+
+        // —— 文生图后端（Ollama 不跑图，需 ComfyUI 或 stable-diffusion.cpp）——
+        let comfyPaths = ["/Applications/ComfyUI.app", NSHomeDirectory() + "/ComfyUI",
+                          NSHomeDirectory() + "/Applications/ComfyUI.app"]
+        if let hit = comfyPaths.first(where: { FileManager.default.fileExists(atPath: $0) }) {
+            list.append(Engine(name: "ComfyUI", path: hit, version: "已安装", ready: true,
+                               installURL: "https://www.comfy.org", role: "文生图/视频节点工作流"))
+        } else {
+            list.append(Engine(name: "ComfyUI", path: "未找到", version: "未安装", ready: false,
+                               installURL: "https://www.comfy.org", role: "文生图/视频节点工作流"))
+        }
+
+        let sdcppHome = NSHomeDirectory() + "/stable-diffusion.cpp"
+        if let p = Sh.find("sd") ?? Sh.find("sd-server") {
+            list.append(Engine(name: "stable-diffusion.cpp", path: p, version: "已安装", ready: true,
+                               installURL: "https://github.com/leejet/stable-diffusion.cpp",
+                               role: "GGUF 文生图，与 Ollama 同族"))
+        } else if FileManager.default.fileExists(atPath: sdcppHome) {
+            list.append(Engine(name: "stable-diffusion.cpp", path: sdcppHome, version: "已克隆", ready: false,
+                               installURL: "https://github.com/leejet/stable-diffusion.cpp",
+                               role: "GGUF 文生图（已克隆，未编出 sd 命令）"))
+        } else {
+            list.append(Engine(name: "stable-diffusion.cpp", path: "未找到", version: "未安装", ready: false,
+                               installURL: "https://github.com/leejet/stable-diffusion.cpp",
+                               role: "GGUF 文生图（brew install stable-diffusion-cpp）"))
+        }
         return list
     }
 

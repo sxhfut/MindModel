@@ -95,6 +95,15 @@ final class AppState: ObservableObject {
     @Published var pickedModel = ""
     @Published var log = ""
     @Published var busy: String?
+
+    // 模型拉取进度（ollama pull 实时解析）
+    /// 正在拉取的模型 tag；nil 表示当前没有进行中的拉取
+    @Published var pullTag: String?
+    /// 当前层正在拉取：hash、百分比（0~1）、已下载/总大小、速度、剩余时间
+    @Published var pullLayer: (hash: String, pct: Double, done: String, total: String, speed: String, eta: String)?
+    /// 是否正在校验已有层（断点续传时 Ollama 会先 verify，无百分比）
+    @Published var pullVerifying = false
+    private var pullProc: Process?
     @Published var imports: [ImportItem] = []
     @Published var dragged = false
     @Published var toast: String?
@@ -156,6 +165,14 @@ final class AppState: ObservableObject {
     func isCloud(_ m: InstalledModel) -> Bool { manifest(m.name)?.remote ?? false }
 
     var ollamaPath: String? { engines.first(where: { $0.name == "Ollama" && $0.ready })?.path }
+
+    /// 已就绪的文生图后端（ComfyUI 或 stable-diffusion.cpp），Ollama 跑不了图
+    var imageBackends: [Engine] {
+        engines.filter { ($0.name == "ComfyUI" || $0.name == "stable-diffusion.cpp") && $0.ready }
+    }
+
+    /// 文生图后端是否至少有一个可用
+    var hasImageBackend: Bool { !imageBackends.isEmpty }
 
     /// 可用于权重的统一内存预算：取 Metal 建议工作集与 80% 物理内存的较小值
     var budgetGB: Double {
@@ -306,8 +323,12 @@ final class AppState: ObservableObject {
 
     func runPull(_ tag: String) {
         guard let p = ollamaPath else { toast = "未检测到 Ollama"; return }
+        guard pullProc == nil else { toast = "已有模型在拉取中，请先等它完成或取消"; return }
         busy = "拉取 \(tag)"
         log = ""
+        pullTag = tag
+        pullLayer = nil
+        pullVerifying = false
         DispatchQueue.global(qos: .userInitiated).async {
             let proc = Process()
             proc.executableURL = URL(fileURLWithPath: p)
@@ -315,20 +336,137 @@ final class AppState: ObservableObject {
             let pipe = Pipe()
             proc.standardOutput = pipe
             proc.standardError = pipe
+            DispatchQueue.main.async { self.pullProc = proc }
+
+            // 残留缓冲：ollama pull 的进度用 \r（回车）覆盖刷新、\n 才换行，
+            // 所以 stdout 里大量内容是被 \r 黏在一起的"覆盖序列"。这里同时按 \r 和 \n
+            // 切段，只把每段里的最新一条进度交给解析；段尾不完整则留在 rest 等下一块拼。
+            var rest = ""
             pipe.fileHandleForReading.readabilityHandler = { h in
                 let d = h.availableData
-                if !d.isEmpty, let s = String(data: d, encoding: .utf8) {
-                    DispatchQueue.main.async { self.log += s }
+                guard !d.isEmpty, let s = String(data: d, encoding: .utf8) else { return }
+                let chunk = rest + s
+                rest = ""
+                // 用 \r 或 \n 作为段边界；覆盖动画里只有最后一个 \r 之后才是"当前"进度
+                let segs = chunk.components(separatedBy: CharacterSet(charactersIn: "\r\n"))
+                // 若 chunk 不是以 \r/\n 结尾，最后一段不完整，留下次拼
+                if !chunk.hasSuffix("\r") && !chunk.hasSuffix("\n") {
+                    if let last = segs.last, !last.isEmpty { rest = last }
+                }
+                for seg in segs {
+                    let line = seg.trimmingCharacters(in: .whitespaces)
+                    guard !line.isEmpty else { continue }
+                    // 只有"最新"的进度才有意义；但日志要留全。这里只解析最新一条，
+                    // 靠 \r 覆盖的性质，同一 chunk 里最后一条就是当前进度。
+                    DispatchQueue.main.async { self.consumePullLine(line) }
                 }
             }
             try? proc.run()
             proc.waitUntilExit()
             pipe.fileHandleForReading.readabilityHandler = nil
+            let code = proc.terminationStatus
             DispatchQueue.main.async {
+                self.pullProc = nil
+                let ok = code == 0
+                self.pullTag = nil
+                self.pullLayer = nil
+                self.pullVerifying = false
                 self.busy = nil
-                self.log += "\n[完成] 退出码 \(proc.terminationStatus)\n"
-                self.refreshInstalled()
+                self.log += ok
+                    ? "\n[完成] \(tag) 拉取成功\n"
+                    : "\n[失败] \(tag) 退出码 \(code)。中断未完成的部分已保留，重新点「拉取」即可断点续传。\n"
+                if ok {
+                    // 自动装载：刷新已装列表后，直接落到对话页签并选中该模型
+                    self.refreshInstalled()
+                    self.toast = "\(tag) 已就绪，已为你切到「对话」可直接用"
+                    // refreshInstalled 是异步的，稍等列表回来再切页签选中
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        guard let m = self.installed.first(where: { $0.name == tag }) else { return }
+                        self.chatModel = m.name
+                        self.tab = .chat
+                    }
+                }
             }
+        }
+    }
+
+    /// 取消当前拉取。Ollama 会在当前层下完后退出，已下载层全部保留，下次拉取自动续传。
+    func cancelPull() {
+        guard let proc = pullProc else { return }
+        proc.terminate()
+        log += "\n[取消] 已请求中断，当前层完成后停止；已下载部分保留，可断点续传。\n"
+    }
+
+    /// 解析 ollama pull 的每一行输出，更新进度状态。
+    /// 已知格式（Ollama 0.40.x）：
+    ///   pulling c5396e06af29:  13% ▕██     ▏  52 MB/397 MB  17 MB/s  19s
+    ///   pulling manifest
+    ///   pulling 8934d96d3f08: 100% ▕█████▏ 397 MB
+    ///   verifying sha256 digest
+    ///   writing manifest
+    ///   success
+    private func consumePullLine(_ raw: String) {
+        // 清掉 Ollama 的 ANSI 控制码（如 \u{1B}[?25l 隐藏光标），否则日志出现乱码
+        var line = raw.trimmingCharacters(in: .whitespaces)
+        if line.contains("\u{1B}") {
+            line = line.replacingOccurrences(of: "\u{1B}\\[[0-9;?]*[a-zA-Z]", with: "",
+                                             options: .regularExpression)
+                .trimmingCharacters(in: .whitespaces)
+        }
+        guard !line.isEmpty else { return }
+
+        if line.hasPrefix("pulling manifest") || line.hasPrefix("writing manifest")
+            || line.hasPrefix("success") || line.hasPrefix("verifying")
+            || line.hasPrefix("Error") || line.hasPrefix("error") {
+            // 关键事件才进日志；进度条（pulling <hash>: …）是 \r 覆盖的动画，
+            // 若每段都写日志会灌入几千条重复行，这里只留里程碑。
+            self.log += line + "\n"
+        }
+
+        if line.hasPrefix("pulling manifest") || line.hasPrefix("writing manifest")
+            || line.hasPrefix("success") {
+            return
+        }
+        if line.hasPrefix("verifying") {
+            self.pullVerifying = true
+            return
+        }
+
+        // pulling <hash>: <pct>% ▕...▏ <done>/<total> <speed> <eta>
+        if line.hasPrefix("pulling ") {
+            let body = String(line.dropFirst("pulling ".count))
+            // 层 hash 冒号后的部分
+            let parts = body.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+            guard parts.count == 2 else { return }
+            let hash = String(parts[0]).trimmingCharacters(in: .whitespaces)
+            let rest = String(parts[1])
+
+            // 百分比
+            var pct = 0.0
+            if let r = rest.range(of: #"\d{1,3}%"#, options: .regularExpression) {
+                let s = String(rest[r])
+                pct = Double(s.dropLast())! / 100.0
+            }
+            // 大小：done/total
+            var done = "", total = ""
+            if let r = rest.range(of: #"\d+(\.\d+)?\s*[KMGTP]?B\s*/\s*\d+(\.\d+)?\s*[KMGTP]?B"#, options: .regularExpression) {
+                let pair = String(rest[r]).split(separator: "/")
+                if pair.count == 2 {
+                    done = pair[0].trimmingCharacters(in: .whitespaces)
+                    total = pair[1].trimmingCharacters(in: .whitespaces)
+                }
+            }
+            // 速度与剩余时间
+            var speed = "", eta = ""
+            if let r = rest.range(of: #"\d+(\.\d+)?\s*[KMGTP]?B/s"#, options: .regularExpression) {
+                speed = String(rest[r])
+            }
+            if let r = rest.range(of: #"\d+[smh](?=\s|$)"#, options: .regularExpression) {
+                eta = String(rest[r])
+            }
+
+            self.pullVerifying = false
+            self.pullLayer = (hash: hash, pct: pct, done: done, total: total, speed: speed, eta: eta)
         }
     }
 
@@ -341,7 +479,12 @@ final class AppState: ObservableObject {
 
     func openInstalledApp(_ name: String) {
         for e in engines where e.name == name && e.ready {
-            NSWorkspace.shared.open(URL(fileURLWithPath: e.path))
+            // 命令行工具（如 sd/sd-server）不是可双击的应用，打开文档页而非文件
+            if e.name == "stable-diffusion.cpp" || e.name == "llama.cpp" {
+                if let u = URL(string: e.installURL) { NSWorkspace.shared.open(u) }
+            } else {
+                NSWorkspace.shared.open(URL(fileURLWithPath: e.path))
+            }
             return
         }
         if let e = engines.first(where: { $0.name == name }), let u = URL(string: e.installURL) {
