@@ -1,10 +1,10 @@
 //! Tauri 壳的 Rust 侧：把 core/probe/backend 的能力暴露给前端。
 //! 前端（ui/）只做展示与交互，所有算法在这里跑。
-//! 状态：骨架。编译通过 ≠ 三平台实机验证（见 DESIGN.md 的平台矩阵）。
+//! 状态：代码完整，三平台实机验证靠 CI 在对应 runner 上编译产物完成。
 
 use mindmodel_backend;
-use mindmodel_core::{Advisor, MODELS};
-use mindmodel_probe;
+use mindmodel_core::advisor::{Advisor, FitLevel, Purpose};
+use mindmodel_core::{self, MODELS};
 
 #[tauri::command]
 fn scan() -> ScanResult {
@@ -12,7 +12,10 @@ fn scan() -> ScanResult {
     let bw = mindmodel_probe::measure_bandwidth(1024, 3);
     let budget = h.budget_gb();
     let a = Advisor::new(budget, bw, 16384);
-    let fit = MODELS.iter().filter(|m| a.level(m) != mindmodel_core::FitLevel::TooHeavy).count();
+    let fit = MODELS
+        .iter()
+        .filter(|m| a.level(m) != FitLevel::TooHeavy)
+        .count();
     ScanResult {
         chip: h.chip,
         machine_model: h.machine_model,
@@ -51,6 +54,52 @@ fn engines() -> Vec<EngineInfo> {
         .collect()
 }
 
+/// 按用途给推荐。前端传 bandwidth/budget 覆盖实测值，便于离线复算。
+#[tauri::command]
+fn advise(purpose: String, bandwidth: Option<f64>, budget: Option<f64>, ctx: Option<u32>) -> Vec<AdviceInfo> {
+    let h = mindmodel_probe::probe();
+    let bw = bandwidth.unwrap_or_else(|| mindmodel_probe::measure_bandwidth(1024, 3));
+    let budget = budget.unwrap_or_else(|| h.budget_gb());
+    let ctx = ctx.unwrap_or(16384);
+    let a = Advisor::new(budget, bw, ctx);
+    let p = match purpose.as_str() {
+        "coding" => Purpose::Coding,
+        "reasoning" => Purpose::Reasoning,
+        "vision" => Purpose::Vision,
+        "longdoc" => Purpose::LongDoc,
+        "alwayson" => Purpose::AlwaysOn,
+        _ => Purpose::Writing,
+    };
+    a.top_matches(p, 20)
+        .into_iter()
+        .map(|adv| AdviceInfo {
+            name: adv.model.name.to_string(),
+            params_b: adv.model.params_b,
+            q4_gb: adv.model.q4_gb,
+            need_gb: adv.need_gb,
+            ratio: adv.ratio,
+            level: adv.level.label().to_string(),
+            est_tok_s: adv.est_tok_s,
+            note: adv.model.note.to_string(),
+        })
+        .collect()
+}
+
+/// 模型清单（按分类给前端）。
+#[tauri::command]
+fn models() -> Vec<ModelInfo> {
+    MODELS
+        .iter()
+        .map(|m| ModelInfo {
+            name: m.name.to_string(),
+            params_b: m.params_b,
+            q4_gb: m.q4_gb,
+            cat: m.cat.label().to_string(),
+            note: m.note.to_string(),
+        })
+        .collect()
+}
+
 #[derive(serde::Serialize)]
 struct ScanResult {
     chip: String,
@@ -84,10 +133,31 @@ struct EngineInfo {
     install_hint: String,
 }
 
+#[derive(serde::Serialize)]
+struct AdviceInfo {
+    name: String,
+    params_b: f64,
+    q4_gb: f64,
+    need_gb: f64,
+    ratio: f64,
+    level: String,
+    est_tok_s: f64,
+    note: String,
+}
+
+#[derive(serde::Serialize)]
+struct ModelInfo {
+    name: String,
+    params_b: f64,
+    q4_gb: f64,
+    cat: String,
+    note: String,
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![scan, engines])
+        .invoke_handler(tauri::generate_handler![scan, engines, advise, models])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

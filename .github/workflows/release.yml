@@ -1,0 +1,81 @@
+name: 打包三平台安装包
+
+# 在真正对应的 runner 上编译出可运行安装包：
+# - Windows: NSIS 安装器 (.exe)
+# - Linux: deb + AppImage
+# - macOS: app + dmg
+# 产物上传为 artifact，可在 Actions 页面下载。
+# 本机 macOS 无法交叉编译 Windows/Linux 二进制，所以这一步必须在 CI 跑。
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.platform.name }}
+    runs-on: ${{ matrix.platform.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - { name: "Windows", os: "windows-latest" }
+          - { name: "Linux", os: "ubuntu-latest" }
+          - { name: "macOS", os: "macos-latest" }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust 工具链
+        run: rustup update stable && rustup default stable
+
+      # Linux 打包需要系统依赖
+      - name: Linux 依赖
+        if: matrix.platform.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev patchelf libgtk-3-dev
+
+      - name: Node 工具链
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: 安装前端依赖
+        run: npm ci
+        working-directory: ui
+
+      - name: 缓存 Rust
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            shells/tauri/src-tauri/target
+          key: ${{ matrix.platform.os }}-tauri-${{ hashFiles('shells/tauri/src-tauri/Cargo.lock') }}
+
+      - name: 安装 tauri-cli
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: 编译安装包
+        run: cargo tauri build
+        working-directory: shells/tauri/src-tauri
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: mindmodel-${{ matrix.platform.name }}
+          path: |
+            shells/tauri/src-tauri/target/release/bundle/**/*.exe
+            shells/tauri/src-tauri/target/release/bundle/**/*.msi
+            shells/tauri/src-tauri/target/release/bundle/**/*.deb
+            shells/tauri/src-tauri/target/release/bundle/**/*.AppImage
+            shells/tauri/src-tauri/target/release/bundle/**/*.rpm
+            shells/tauri/src-tauri/target/release/bundle/**/*.dmg
+            shells/tauri/src-tauri/target/release/bundle/**/*.app
+          if-no-files-found: warn

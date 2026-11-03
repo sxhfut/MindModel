@@ -4,10 +4,10 @@
   "version": "0.1.0",
   "identifier": "com.maclab.mindmodel",
   "build": {
-    "beforeDevCommand": "echo 前端由 ui/ 目录提供，见 DESIGN.md",
+    "beforeDevCommand": "npm run build --prefix ../../ui",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "echo 前端由 ui/ 目录提供，见 DESIGN.md",
-    "frontendDist": "../../ui/dist"
+    "beforeBuildCommand": "npm run build --prefix ../../ui",
+    "frontendDist": "../../../ui/dist"
   },
   "app": {
     "windows": [
@@ -26,6 +26,8 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": []
+    "icon": [
+      "icons/icon.png"
+    ]
   }
 }

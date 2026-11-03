@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"MindModel 桌面壳的默认权限：只开 core 命令，不开文件/网络等敏感权限","local":true,"windows":["main"],"permissions":["core:default"]}}

@@ -1,26 +1,44 @@
-# 跨平台壳（骨架）
+# 跨平台壳
 
-这个目录是 P2 阶段的骨架：代码结构就位，**三平台实机验证尚未开始**。
+一套前端（`ui/`）+ 一套 Rust 后端（`src-tauri/`），编译出三平台桌面应用。
 
-## 现状
+## 现状（已从"骨架"推进到"可编译"）
 
 | 目录 | 内容 | 状态 |
 |---|---|---|
-| `tauri/src-tauri/` | Tauri 壳的 Rust 侧，把 core/probe/backend 暴露成 `scan` / `engines` 两个 command | 骨架，能编译的依赖未在本机装（需 `cargo install tauri-cli`） |
-| `browser/` | 无 GUI 平台（国产/服务器）的兜底：core 起本地 HTTP，浏览器打开 | 未开始 |
+| `tauri/src-tauri/` | Tauri 壳 Rust 侧，暴露 `scan`/`engines`/`advise`/`models` 四个 command | ✅ 本机 `cargo check` 与 `cargo tauri build` 通过 |
+| `ui/` | Vite + 原生 JS 前端，调 Tauri command，两种壳共用 | ✅ 本机 `npm run build` 通过 |
+| `browser/` | 无 GUI 平台的浏览器兜底 | ⏳ 未开始（依赖 P3 server crate） |
 
-## 为什么是骨架而不是成品
+## 本机已验证
 
-DESIGN.md 第三节的平台矩阵已经写明：跨平台的瓶颈不在界面，在推理后端与实机验证。
-"能编译"不等于"支持"，国产平台尤其如此。因此这里只搭结构，不虚标覆盖度。
+- macOS：`cargo tauri build` 产出 11MB 的 `MindModel.app` 与 `mindmodel-tauri` 二进制。
+  （dmg 打包在本机沙箱里因 `hdiutil` 无法挂载镜像而失败，属环境限制；CI 的 macOS runner 无此问题。）
 
-## 后续（P2/P3）
+## 三平台安装包（靠 CI 产出）
 
-1. 前端 `ui/`：一份 Vite + 原生 JS，两种壳（Tauri / 浏览器）共用。算法全走 Rust command，前端不重算。
-2. `tauri build` 出 Win/macOS/Linux 三份二进制，跑同一套自检。
-3. `browser/`：`mindmodel serve` 起服务，`/api/scan` 返回 JSON，浏览器渲染。
+本机 macOS 无法交叉编译 Windows/Linux 二进制，所以 `.exe` / `.deb` / `.AppImage` / `.dmg`
+由 `.github/workflows/release.yml` 在真正的 `windows-latest` / `ubuntu-latest` / `macos-latest`
+runner 上编译，产物上传为 artifact。推送 `main` 或打 `v*` tag 即触发。
 
-## 现在能用的仍是两套
+下载方式：仓库 Actions 页 → 对应 run → Artifacts。
 
-- **macOS 桌面**：`./build.sh` → `build/MindModel.app`（已验证）
-- **命令行**：`rust/crates/cli` → `mindmodel scan|advise|task|parse|list|engines`（已验证）
+## 本地构建（macOS）
+
+```bash
+# 一次性：装 tauri-cli + 前端依赖
+cargo install tauri-cli --version "^2" --locked
+cd ui && npm install && cd ..
+
+# 构建（自动先 npm run build 再编译）
+cd shells/tauri/src-tauri
+cargo tauri build
+# 产物：target/release/bundle/macos/MindModel.app
+```
+
+## 覆盖度（诚实标注）
+
+- macOS：✅ 本机实跑可编译出应用。
+- Windows / Linux：代码就位、CI 会编译，但**尚未在真实硬件上打开运行过**。
+  探测层（DXGI/NVML、sysfs/NVML）与打包结果都需要真机点开验证，这一步还没做。
+- 国产平台（鲲鹏/飞腾/龙芯/海光）：仍未开始，见 DESIGN.md 平台矩阵。
