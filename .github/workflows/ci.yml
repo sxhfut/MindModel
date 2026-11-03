@@ -29,7 +29,7 @@ jobs:
             rust/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('rust/Cargo.lock') }}
 
-      # 22 个测试里有 5 条钉住与 Swift 版首次选型逐字一致。
+      # 24 个测试里有 5 条钉住与 Swift 版首次选型逐字一致。
       # 非 macOS 平台跑同一条断言，正好能验出探测层在不同硬件上的行为差异。
       - name: 测试
         working-directory: rust
@@ -42,6 +42,11 @@ jobs:
       - name: 体检自检（Linux/Windows 未实机验证，只要求不 panic）
         working-directory: rust
         run: cargo run --release --bin mindmodel -- scan
+        continue-on-error: true
+
+      - name: 后端探测自检
+        working-directory: rust
+        run: cargo run --release --bin mindmodel -- engines
         continue-on-error: true
 
   macos-app:
@@ -57,7 +62,7 @@ jobs:
         run: |
           APP=build/MindModel.app/Contents/MacOS/MindModel
           mkdir -p /tmp/shots
-          for tab in overview task import installed hardware bench chat; do
+          for tab in overview task import installed hardware bench chat agent recommend; do
             MM_TAB=$tab MM_SNAPSHOT=/tmp/shots/$tab.png "$APP" || true
           done
           ls -l /tmp/shots

@@ -1,0 +1,21 @@
+[package]
+name = "mindmodel-tauri"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "MindModel 跨平台桌面壳（Tauri），复用 core/probe/backend"
+
+[lib]
+name = "mindmodel_tauri_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+mindmodel-core = { path = "../../../rust/crates/core" }
+mindmodel-probe = { path = "../../../rust/crates/probe" }
+mindmodel-backend = { path = "../../../rust/crates/backend" }

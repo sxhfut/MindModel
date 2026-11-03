@@ -3,9 +3,14 @@
 version = 4
 
 [[package]]
+name = "mindmodel-backend"
+version = "0.1.0"
+
+[[package]]
 name = "mindmodel-cli"
 version = "0.1.0"
 dependencies = [
+ "mindmodel-backend",
  "mindmodel-core",
  "mindmodel-probe",
 ]

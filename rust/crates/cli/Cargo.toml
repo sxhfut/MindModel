@@ -11,3 +11,4 @@ path = "src/main.rs"
 [dependencies]
 mindmodel-core = { path = "../core" }
 mindmodel-probe = { path = "../probe" }
+mindmodel-backend = { path = "../backend" }

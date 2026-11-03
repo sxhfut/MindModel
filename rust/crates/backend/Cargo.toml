@@ -1,0 +1,8 @@
+[package]
+name = "mindmodel-backend"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "推理后端抽象：探测、安装、启动、带宽实测，按平台挂不同实现"
+
+[dependencies]

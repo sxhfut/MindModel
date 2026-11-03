@@ -47,6 +47,7 @@ final class AppState: ObservableObject {
         case importGGUF = "导入 GGUF"
         case bench = "实测基准"
         case chat = "对话"
+        case agent = "智能体"
         var id: String { rawValue }
         /// 英文键，供 `MM_TAB=task` 这类自动化/截图脚本定位页签
         var key: String {
@@ -59,6 +60,7 @@ final class AppState: ObservableObject {
             case .importGGUF: return "import"
             case .bench: return "bench"
             case .chat: return "chat"
+            case .agent: return "agent"
             }
         }
         var icon: String {
@@ -71,6 +73,7 @@ final class AppState: ObservableObject {
             case .importGGUF: return "shippingbox"
             case .bench: return "speedometer"
             case .chat: return "bubble.left.and.bubble.right"
+            case .agent: return "wrench.and.screwdriver"
             }
         }
     }
@@ -115,6 +118,20 @@ final class AppState: ObservableObject {
     @Published var chatCtx = 8192
     @Published var pendingImages: [String] = []
     private var chatTask: Task<Void, Never>?
+
+    // 智能体（工具调用）
+    @Published var agentModel = ""
+    @Published var agentInput = ""
+    @Published var agentBusy = false
+    @Published var agentError: String?
+    @Published var agentSteps: [AgentStep] = []
+    @Published var agentCwd = NSHomeDirectory()
+    /// 是否允许写文件与执行命令。默认关，模型第一次想动手时弹确认。
+    @Published var agentAllowWrite = false
+    /// 需要用户确认的待执行工具（写文件/命令）
+    @Published var agentPendingConfirm: ToolCall?
+    @Published var agentConfirmChoice = false
+    private var agentTask: Task<Void, Never>?
 
     let ctxOptions = [4096, 8192, 16384, 32768, 65536, 131072]
 
@@ -686,6 +703,16 @@ final class AppState: ObservableObject {
         loadGGUF(paths: files)
     }
 
+    func pickAgentCwd() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.message = "选择智能体的工作目录（读文件、搜索默认从这里开始）"
+        guard panel.runModal() == .OK, let dir = panel.urls.first else { return }
+        agentCwd = dir.path
+    }
+
     // MARK: - 对话
 
     /// 能对话的模型：Ollama 里的都算，但纯嵌入模型排除
@@ -813,6 +840,185 @@ final class AppState: ObservableObject {
             }
             self.chatBusy = false
         }
+    }
+
+    // MARK: - 智能体
+
+    /// 一次模型调用：非流式，带工具定义。返回（文本，工具调用列表，是否结束）。
+    /// 用非流式是为了拿到完整 tool_calls；对话页用流式是为了逐字显示。
+    private func agentCall(model: String, messages: [[String: Any]]) async
+        -> (text: String, calls: [ToolCall], done: Bool)? {
+        guard let url = URL(string: "http://127.0.0.1:11434/api/chat") else { return nil }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.timeoutInterval = 600
+        let body: [String: Any] = [
+            "model": model,
+            "messages": messages,
+            "tools": AgentTools.definitions,
+            "stream": false,
+            "options": ["num_ctx": 8192, "temperature": 0.3],
+        ]
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
+            guard code == 200 else {
+                let detail = String(data: data, encoding: .utf8) ?? ""
+                return (text: "调用失败（HTTP \(code)）：\(detail.prefix(300))", calls: [], done: false)
+            }
+            guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return (text: "返回无法解析", calls: [], done: false)
+            }
+            let msg = obj["message"] as? [String: Any] ?? [:]
+            let text = msg["content"] as? String ?? ""
+            let done = (obj["done"] as? Bool) ?? false
+            var calls: [ToolCall] = []
+            if let tc = msg["tool_calls"] as? [[String: Any]] {
+                for c in tc {
+                    if let f = c["function"] as? [String: Any],
+                       let name = f["name"] as? String {
+                        var args: [String: String] = [:]
+                        // arguments 可能是对象，也可能是 JSON 字符串，两种都接
+                        if let a = f["arguments"] as? [String: Any] {
+                            for (k, v) in a { args[k] = String(describing: v) }
+                        } else if let s = f["arguments"] as? String,
+                                  let data = s.data(using: .utf8),
+                                  let a = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                            for (k, v) in a { args[k] = String(describing: v) }
+                        }
+                        calls.append(ToolCall(name: name, arguments: args))
+                    }
+                }
+            }
+            return (text, calls, done)
+        } catch {
+            return (text: "调用出错：\(error.localizedDescription)", calls: [], done: false)
+        }
+    }
+
+    /// 跑一轮智能体：模型可以反复调用工具，直到给出最终答复或步数用尽。
+    func runAgent(task: String) {
+        guard !agentBusy else { return }
+        guard !agentModel.isEmpty else { agentError = "先选一个模型"; return }
+        agentBusy = true
+        agentError = nil
+        agentSteps = []
+        let model = agentModel
+        let cwd = agentCwd
+
+        agentTask = Task { [weak self] in
+            guard let self else { return }
+            var messages: [[String: Any]] = [
+                ["role": "system", "content": """
+                你是运行在本机的一个智能体，负责完成用户交给你的任务。工作目录是 \(cwd)。
+                规则：
+                1. 能自己动手的（读文件、列目录、搜索）直接调用工具；需要写文件或执行命令时先规划好，一次只做一个有把握的动作。
+                2. 每个工具调用前想清楚参数对不对，尤其是绝对路径。
+                3. 拿到工具结果后，判断是否还需要继续；不需要了就给出最终答复，不要再调用工具。
+                4. 最终答复要直接回答用户的问题，说清楚你做了什么、结论是什么。
+                5. 不要编造文件内容或命令输出；拿不到的信息就直说拿不到。
+                """],
+                ["role": "user", "content": task],
+            ]
+
+            var finalAnswer = ""
+            let maxSteps = 12
+
+            for step in 1...maxSteps {
+                if Task.isCancelled { break }
+                guard let r = await self.agentCall(model: model, messages: messages) else {
+                    self.agentError = "调用失败，请确认 Ollama 在运行"
+                    break
+                }
+                // 记录模型这一步的想法/答复
+                if !r.text.isEmpty {
+                    if r.calls.isEmpty {
+                        finalAnswer = r.text
+                        self.agentSteps.append(AgentStep(kind: .answer, title: "答复", detail: r.text))
+                        break
+                    } else {
+                        self.agentSteps.append(AgentStep(kind: .thought, title: "第 \(step) 步", detail: r.text))
+                    }
+                }
+                // 没有工具调用 = 结束
+                if r.calls.isEmpty {
+                    if finalAnswer.isEmpty { finalAnswer = "（模型没有给出文字答复）" }
+                    break
+                }
+                // 执行工具
+                for call in r.calls {
+                    if Task.isCancelled { break }
+                    // 写文件/命令需要确认；纯读直接执行
+                    let risky = (call.name == "write_file" || call.name == "run_command")
+                    if risky && !self.agentAllowWrite {
+                        let approved = await self.confirmTool(call)
+                        if !approved {
+                            self.agentSteps.append(AgentStep(
+                                kind: .result, title: call.name,
+                                detail: "已拒绝执行（用户未授权）"))
+                            messages.append(self.toolMsg(call, ok: false,
+                                                          output: "用户拒绝执行这个操作"))
+                            continue
+                        }
+                    }
+                    let res = AgentExecutor.execute(call)
+                    self.agentSteps.append(AgentStep(
+                        kind: res.ok ? .tool : .result,
+                        title: call.name,
+                        detail: res.output.isEmpty ? "（空）" : res.output))
+                    messages.append(self.toolMsg(call, ok: res.ok, output: res.output))
+                }
+                // 把模型这轮的 tool_calls 也回传，保持消息流完整
+                messages.append(self.assistantToolMsg(calls: r.calls))
+            }
+
+            if finalAnswer.isEmpty && !self.agentSteps.isEmpty {
+                finalAnswer = "（达到步数上限，未给出最终答复）"
+                self.agentSteps.append(AgentStep(kind: .answer, title: "答复", detail: finalAnswer))
+            }
+            self.agentBusy = false
+        }
+    }
+
+    private func toolMsg(_ call: ToolCall, ok: Bool, output: String) -> [String: Any] {
+        return [
+            "role": "tool",
+            "name": call.name,
+            "content": output,
+        ]
+    }
+
+    private func assistantToolMsg(calls: [ToolCall]) -> [String: Any] {
+        let tc: [[String: Any]] = calls.map { c in
+            ["function": ["name": c.name, "arguments": c.arguments]]
+        }
+        return ["role": "assistant", "tool_calls": tc]
+    }
+
+    /// 弹确认框，等用户决定是否允许写文件/执行命令。返回是否批准。
+    @MainActor
+    private func confirmTool(_ call: ToolCall) async -> Bool {
+        agentPendingConfirm = call
+        agentConfirmChoice = false
+        // 等待用户在 UI 上点允许/拒绝
+        while agentPendingConfirm != nil && !agentConfirmChoice {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        let approved = agentConfirmChoice
+        agentPendingConfirm = nil
+        return approved
+    }
+
+    func resolveConfirm(_ allow: Bool) {
+        agentConfirmChoice = allow
+    }
+
+    func stopAgent() {
+        agentTask?.cancel()
+        agentTask = nil
+        agentBusy = false
     }
 
     // MARK: - 实测

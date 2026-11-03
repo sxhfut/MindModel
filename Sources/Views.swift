@@ -165,6 +165,7 @@ struct PageStack: View {
             case .importGGUF: GGUFView()
             case .bench: BenchView()
             case .chat: ChatView()
+            case .agent: AgentView()
             }
             Spacer(minLength: 20)
         }
@@ -289,6 +290,7 @@ struct Header: View {
         case .importGGUF: return "任意 .gguf 均可导入，无模型白名单"
         case .bench: return "跳过估算，直接让 Ollama 跑一次"
         case .chat: return "用装好的模型直接对话，可带图片"
+        case .agent: return "让模型动手：读文件、搜代码、写文件、跑命令"
         }
     }
 }
@@ -1622,6 +1624,198 @@ struct ChatView: View {
     func thumb(_ b64: String) -> NSImage? {
         guard let d = Data(base64Encoded: b64) else { return nil }
         return NSImage(data: d)
+    }
+}
+
+// MARK: - 智能体
+
+struct AgentView: View {
+    @EnvironmentObject var s: AppState
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // 输入区
+            Card {
+                VStack(alignment: .leading, spacing: 10) {
+                    SectionHead(title: "交给模型一件事",
+                                sub: "它会自己拆步骤、调用工具、把结果拼成答复。工具在后台执行，每一步都记录在下面。")
+                    HStack(spacing: 8) {
+                        Picker("", selection: $s.agentModel) {
+                            Text("选择模型").tag("")
+                            ForEach(s.chatModels) { m in
+                                Text(m.name).tag(m.name)
+                            }
+                        }
+                        .labelsHidden().frame(width: 240).controlSize(.small)
+
+                        Text("工作目录").font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text(s.agentCwd)
+                            .font(.system(size: 10.5, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1).truncationMode(.middle)
+                            .frame(width: 200, alignment: .leading)
+                        Button("改目录") { s.pickAgentCwd() }
+                            .buttonStyle(.bordered).controlSize(.small)
+                        Spacer()
+                    }
+
+                    if s.snapshot {
+                        HStack {
+                            Text(s.agentInput.isEmpty ? "描述要完成的事，例如：在 ~/code 下找出所有用了 TODO 标记的文件" : s.agentInput)
+                                .font(.system(size: 12.5))
+                                .foregroundStyle(s.agentInput.isEmpty ? Color.secondary : .primary)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.vertical, 4).frame(height: 26, alignment: .top)
+                    } else {
+                        TextField("描述要完成的事，例如：在 ~/code 下找出所有用了 TODO 标记的文件", text: $s.agentInput, axis: .vertical)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 12.5))
+                            .lineLimit(1...4)
+                            .padding(.vertical, 4)
+                    }
+
+                    HStack(spacing: 8) {
+                        if s.snapshot {
+                            HStack(spacing: 6) {
+                                Image(systemName: s.agentAllowWrite ? "checkmark.square.fill" : "square")
+                                    .font(.system(size: 12))
+                                Text("允许写文件和执行命令").font(.system(size: 11))
+                            }
+                            .foregroundStyle(s.agentAllowWrite ? T.good : .secondary)
+                        } else {
+                            Toggle("允许写文件和执行命令", isOn: $s.agentAllowWrite)
+                                .toggleStyle(.switch).controlSize(.small)
+                                .font(.system(size: 11))
+                        }
+                        Spacer()
+                        if s.agentBusy {
+                            Button("停止") { s.stopAgent() }
+                                .buttonStyle(.bordered).controlSize(.small).tint(T.bad)
+                        }
+                        Button(s.agentBusy ? "运行中…" : "开始") {
+                            s.runAgent(task: s.agentInput)
+                        }
+                        .buttonStyle(.borderedProminent).controlSize(.small)
+                        .disabled(s.agentBusy || s.agentModel.isEmpty
+                                  || s.agentInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                    if let e = s.agentError {
+                        Text(e).font(.system(size: 11)).foregroundStyle(T.bad)
+                    }
+                    Text("开关关着时，模型要写文件或跑命令会先弹窗问你是否放行；纯读操作（读文件、列目录、搜索）不需要授权。")
+                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            // 步骤记录
+            if s.agentSteps.isEmpty {
+                Card {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("还没有运行记录").font(.system(size: 12.5, weight: .medium))
+                        Text("可以试：\n· 读 ~/Desktop 下的某个文档并总结\n· 在当前目录找带 TODO 的代码文件\n· 写一个 Python 脚本并跑一遍")
+                            .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                            .lineSpacing(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } else {
+                SectionHead(title: "运行过程",
+                            sub: "模型想什么、调了什么工具、工具回了什么，全在这里")
+                ForEach(s.agentSteps) { step in
+                    AgentStepRow(step: step)
+                }
+            }
+        }
+        .onAppear {
+            if s.agentModel.isEmpty, let f = s.chatModels.first { s.agentModel = f.name }
+        }
+        .alert("允许这个操作吗？", isPresented: confirmBinding) {
+            Button("允许", role: .none) { s.resolveConfirm(true) }
+            Button("拒绝", role: .cancel) { s.resolveConfirm(false) }
+        } message: {
+            if let c = s.agentPendingConfirm {
+                Text(describe(c))
+            } else {
+                Text("")
+            }
+        }
+    }
+
+    private var confirmBinding: Binding<Bool> {
+        Binding(
+            get: { s.agentPendingConfirm != nil },
+            set: { if !$0 { s.resolveConfirm(false) } }
+        )
+    }
+
+    private func describe(_ c: ToolCall) -> String {
+        switch c.name {
+        case "write_file":
+            let p = c.arguments["path"] ?? "?"
+            return "模型要写入文件：\(p)\n内容长度 \(c.arguments["content"]?.count ?? 0) 字符。"
+        case "run_command":
+            return "模型要执行命令：\(c.arguments["command"] ?? "?")\n工作目录：\(c.arguments["cwd"] ?? s.agentCwd)"
+        default:
+            return "模型要调用工具：\(c.name)"
+        }
+    }
+}
+
+struct AgentStepRow: View {
+    let step: AgentStep
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(tint)
+                .frame(width: 16, alignment: .center)
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(step.title).font(.system(size: 11, weight: .semibold))
+                    Badge(text: kindLabel, color: tint)
+                }
+                Text(step.detail)
+                    .font(.system(size: step.kind == .tool || step.kind == .result ? 10.5 : 12))
+                    .foregroundStyle(step.kind == .tool || step.kind == .result ? Color.secondary : .primary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 9, style: .continuous)
+            .fill(Color.primary.opacity(0.04)))
+        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(T.line, lineWidth: 0.5))
+    }
+
+    var icon: String {
+        switch step.kind {
+        case .thought: return "brain"
+        case .tool: return "wrench"
+        case .result: return "doc.text"
+        case .answer: return "checkmark.circle"
+        }
+    }
+    var tint: Color {
+        switch step.kind {
+        case .thought: return T.accent
+        case .tool: return Color(red: 0.42, green: 0.70, blue: 0.96)
+        case .result: return .secondary
+        case .answer: return T.good
+        }
+    }
+    var kindLabel: String {
+        switch step.kind {
+        case .thought: return "思考"
+        case .tool: return "工具"
+        case .result: return "结果"
+        case .answer: return "答复"
+        }
     }
 }
 

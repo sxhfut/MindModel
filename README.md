@@ -79,6 +79,7 @@ KV     = 2 × 层数 × KV头数 × head_dim × 2B × 上下文
 | 硬件 | 完整探测结果，重新实测带宽，导出报告 |
 | 实测 | 对已装模型跑真实生成，记录 tok/s，覆盖估算值 |
 | 对话 | 直接调用本机 Ollama 模型，支持图片输入，流式输出，记录实测速度 |
+| 智能体 | 让模型动手：读文件、列目录、搜索、写文件、跑命令，工具调用循环，写与命令需确认 |
 
 模型清单内置 79 条，覆盖十类：通用对话、代码、推理、多模态理解、Agent、轻量、图像生成、语音、向量、重排。只有可对话的类别参与对话选型——把图像生成模型混进推荐列表，会让它拿下"首选"并打印一个编造出来的 tok/s。
 
@@ -92,6 +93,7 @@ mindmodel advise [--ctx 16384] [--purpose writing|coding|reasoning|vision|longdo
 mindmodel task [--tasks paper,lit,code,...] [--ctx 16384] [--bandwidth 344] [--budget 102.4]
 mindmodel parse <文件...>                   解析 GGUF 头部（含分片/投影器识别）
 mindmodel list                              列出内置模型清单
+mindmodel engines                           检测本机推理后端
 ```
 
 `--bandwidth` 与 `--budget` 用于离线复算：拿到别人的报告时，可以指定同样的输入验证结果。
@@ -108,7 +110,7 @@ Rust 核心与命令行：
 
 ```bash
 cd rust
-cargo test          # 22 个测试，其中 5 条钉住与 Swift 首次选型逐字一致
+cargo test          # 24 个测试（22 core + 2 backend），其中 5 条钉住与 Swift 首次选型逐字一致
 cargo build --release
 ```
 
@@ -116,11 +118,11 @@ cargo build --release
 
 ## 现在是什么状态
 
-macOS 已在 Apple M5 Max / 128 GB / macOS 27.0.1 上实跑验证，包含带宽实测、GGUF 导入、Ollama 注册、真实生成测速。
+macOS 已在 Apple M5 Max / 128 GB / macOS 27.0.1 上实跑验证，包含带宽实测、GGUF 导入、Ollama 注册、真实生成测速、以及智能体的工具调用（qwen2.5:14b 的 function calling 端到端跑通）。
 
-Rust core 的跨平台探测按 `cfg(target_os)` 分文件，Windows（DXGI + NVML）和 Linux（sysfs + NVML）的代码路径**尚未在实机上跑过**。国产平台（鲲鹏、飞腾、龙芯、海光）只做到代码能编译，没有任何实测数据。界面上区分「未验证 / 可运行 / 已实测」三档，不把"能编译"说成"支持"。
+Rust core 的跨平台探测按 `cfg(target_os)` 分文件，Windows（DXGI + NVML）和 Linux（sysfs + NVML）的代码路径**尚未在实机上跑过**。国产平台（鲲鹏、飞腾、龙芯、海光）只做到代码能编译，没有任何实测数据。界面上区分「未验证 / 可运行 / 已实测」三档，不把"能编译"说成"支持"。Tauri 壳是骨架，未实机验证。
 
-内置候选数在两边暂时不一致：Swift 版 79 条，Rust core 57 条，后者是早期截取的子集。外置成 `data/models.toml` 之后会合并。
+内置候选数在两边暂时不一致：Swift 版 79 条，Rust core 57 条，后者是早期截取的子集。`data/models.toml`（79 条）已作为单一数据源生成，Swift 的 `Catalog.swift` 是权威源，改清单后跑 `python3 tools/gen_models_toml.py` 重新生成。
 
 ## 目录
 
@@ -131,10 +133,16 @@ MindModel/
 │   ├── Catalog.swift    模型清单、能力画像、已装模型盘点与磁盘体检
 │   ├── GGUF.swift       GGUF 头部解析：量化、参数量、KV、分片、mmproj
 │   ├── Advisor.swift    预算/需求/速度/能力分/任务合成
-│   ├── App.swift        状态、并发、Ollama 交互
-│   └── Views.swift      七个页面
+│   ├── Agent.swift      智能体工具层：读文件/列目录/搜索/写文件/跑命令
+│   ├── App.swift        状态、并发、Ollama 交互、agent 循环
+│   └── Views.swift      八个页面
 ├── rust/
-│   └── crates/{core,probe,cli}
+│   └── crates/{core,probe,backend,cli}
+├── shells/
+│   ├── tauri/           跨平台桌面壳（骨架，未实机验证）
+│   └── browser/         无 GUI 平台的浏览器兜底（未开始）
+├── data/models.toml     模型清单单一数据源（79 条）
+├── tools/gen_models_toml.py  从 Catalog.swift 生成 models.toml
 ├── docs/shots/          界面截图
 ├── DESIGN.md            跨平台设计与算法说明
 └── build.sh
@@ -146,6 +154,7 @@ MindModel/
 - **带宽实测受机器负载影响。** 每轮单独计时取峰值，跑之前会先做两轮预热；机器不空闲时最低值会明显偏低，所以界面上同时给出峰值、中位、最低三个数。
 - **删除模型只对 Ollama 托管的生效。** 手工放进目录的 GGUF 只提供"在 Finder 中显示"，不做删除——路径归属无法可靠判断。
 - **不下载模型。** 导入是本地文件注册进 Ollama，下载交给 Ollama 自己做。
+- **智能体工具调用依赖模型的 function calling。** 不是所有本地模型都支持；写文件与执行命令默认要用户逐次确认，纯读操作不需要授权。
 
 ## 许可
 

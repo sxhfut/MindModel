@@ -11,7 +11,7 @@ echo "==> 编译"
 swiftc -O -swift-version 5 \
   -target arm64-apple-macos14.0 \
   Sources/Probe.swift Sources/Catalog.swift Sources/GGUF.swift Sources/Advisor.swift \
-  Sources/App.swift Sources/Views.swift \
+  Sources/Agent.swift Sources/App.swift Sources/Views.swift \
   -o "$APP/Contents/MacOS/MindModel"
 
 echo "==> 签名（ad-hoc）"

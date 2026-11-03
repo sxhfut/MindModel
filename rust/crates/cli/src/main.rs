@@ -17,6 +17,7 @@ fn main() {
         "parse" => parse_files(rest),
         "task" => task_cmd(rest),
         "list" => list(),
+        "engines" => engines(),
         "help" | "-h" | "--help" => help(),
         other => {
             eprintln!("未知命令：{other}\n");
@@ -43,7 +44,8 @@ fn help() {
       --bandwidth <GB/s>  覆盖实测带宽（离线复算用）
       --budget <GB>       覆盖预算（离线复算用）
   mindmodel parse <文件...>               解析 GGUF 头部（含分片/投影器识别）
-  mindmodel list                          列出内置模型清单",
+  mindmodel list                          列出内置模型清单
+  mindmodel engines                       检测本机推理后端",
         CTX_OPTIONS
     );
 }
@@ -232,6 +234,20 @@ fn list() {
             m.q4_gb,
             m.cat.label(),
             m.note
+        );
+    }
+}
+
+fn engines() {
+    println!("{:<10} {:<8} {:<12} {:<10} {}", "后端", "状态", "加速", "版本", "说明");
+    for b in mindmodel_backend::detect_all() {
+        println!(
+            "{:<10} {:<8} {:<12} {:<10} {}",
+            b.id,
+            if b.installed { "已安装" } else { "未安装" },
+            b.accel.label(),
+            b.version.as_deref().unwrap_or("—"),
+            b.role
         );
     }
 }
