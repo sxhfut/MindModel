@@ -1,0 +1,767 @@
+# MindModel 模型清单（单一数据源）
+# 由 tools/gen_models_toml.py 从 Sources/Catalog.swift 生成，不要手改。
+# 体积与适配数据取自 localmodel.run 的 Apple M5 Max 128GB 档位（2026-11 快照）；KV cache 为按架构估算。
+# 字段：params_b 总参数(十亿)、q4_gb Q4_K_M 权重体积、cat 分类、tag ollama 标签(空为需 HF 搜索)、
+#       kv_1k 每 1K token 的 KV cache(GB)、note 备注、active_b MoE 激活参数(缺省=params_b)
+
+# ---- code ----
+[[models]]
+name = "Devstral 2 123B"
+params_b = 123
+q4_gb = 73.3
+cat = "code"
+tag = ""
+kv_1k = 0.30
+note = "代码最强档，128G 才敢碰"
+
+# ---- agent ----
+[[models]]
+name = "Nemotron 3 Super 120B-A12B"
+params_b = 120
+q4_gb = 80.3
+cat = "agent"
+tag = ""
+kv_1k = 0.18
+note = "MoE，长任务 Agent 专用"
+active_b = 12
+
+# ---- reason ----
+[[models]]
+name = "gpt-oss 120B"
+params_b = 117
+q4_gb = 62.4
+cat = "reason"
+tag = "gpt-oss:120b"
+kv_1k = 0.18
+note = "MoE 推理型，激活约 5B"
+active_b = 5.1
+
+# ---- vision ----
+[[models]]
+name = "Llama 4 Scout 109B"
+params_b = 109
+q4_gb = 64.2
+cat = "vision"
+tag = "llama4:scout"
+kv_1k = 0.20
+note = "原生多模态 MoE"
+active_b = 17
+
+# ---- chat ----
+[[models]]
+name = "GLM-4.5-Air 106B"
+params_b = 106
+q4_gb = 71.8
+cat = "chat"
+tag = "glm-4.5-air"
+kv_1k = 0.20
+note = "中文强，MoE"
+active_b = 12
+
+[[models]]
+name = "Qwen2.5 72B"
+params_b = 72
+q4_gb = 50.2
+cat = "chat"
+tag = "qwen2.5:72b"
+kv_1k = 0.25
+note = "中文写作稳妥档"
+
+[[models]]
+name = "Llama 3.3 70B"
+params_b = 70
+q4_gb = 45.3
+cat = "chat"
+tag = "llama3.3:70b"
+kv_1k = 0.25
+note = "通用基准线"
+
+# ---- reason ----
+[[models]]
+name = "Llama-3.3-Nemotron-Super-49B"
+params_b = 49
+q4_gb = 30.6
+cat = "reason"
+tag = ""
+kv_1k = 0.22
+note = "英伟达蒸馏推理"
+
+# ---- chat ----
+[[models]]
+name = "Mixtral 8x7B"
+params_b = 46.7
+q4_gb = 28.9
+cat = "chat"
+tag = "mixtral:8x7b"
+kv_1k = 0.12
+note = "老牌 MoE"
+active_b = 12.9
+
+# ---- code ----
+[[models]]
+name = "Qwen3-Coder-Next 80B-A3B"
+params_b = 80
+q4_gb = 48.0
+cat = "code"
+tag = ""
+kv_1k = 0.12
+note = "代码 Agent，MoE 极快"
+active_b = 3
+
+# ---- chat ----
+[[models]]
+name = "Flint 40B-A2.5B"
+params_b = 39.8
+q4_gb = 25.9
+cat = "chat"
+tag = ""
+kv_1k = 0.10
+note = "稀疏 MoE，速度型"
+active_b = 2.5
+
+[[models]]
+name = "Seed-OSS 36B"
+params_b = 36
+q4_gb = 22.5
+cat = "chat"
+tag = ""
+kv_1k = 0.22
+note = "字节开源"
+
+[[models]]
+name = "Qwen3.6 35B-A3B"
+params_b = 36
+q4_gb = 24.5
+cat = "chat"
+tag = ""
+kv_1k = 0.10
+note = "MoE，中文对话主力"
+active_b = 3
+
+[[models]]
+name = "Qwen3 30B-A3B"
+params_b = 30.5
+q4_gb = 20.7
+cat = "chat"
+tag = "qwen3:30b-a3b"
+kv_1k = 0.10
+note = "速度与质量平衡最佳"
+active_b = 3
+
+# ---- code ----
+[[models]]
+name = "Qwen3-Coder 30B-A3B"
+params_b = 30.5
+q4_gb = 19.4
+cat = "code"
+tag = "qwen3-coder:30b"
+kv_1k = 0.10
+note = "本地写码首选"
+active_b = 3
+
+# ---- vision ----
+[[models]]
+name = "Qwen3-VL 30B-A3B"
+params_b = 31.1
+q4_gb = 20.4
+cat = "vision"
+tag = ""
+kv_1k = 0.10
+note = "看图 + 中文"
+active_b = 3
+
+# ---- chat ----
+[[models]]
+name = "Gemma 4 31B"
+params_b = 32.7
+q4_gb = 20.5
+cat = "chat"
+tag = ""
+kv_1k = 0.20
+note = "长文与写作手感好"
+
+[[models]]
+name = "Gemma 4 26B-A4B"
+params_b = 26.5
+q4_gb = 19.0
+cat = "chat"
+tag = ""
+kv_1k = 0.10
+note = "MoE，响应快"
+active_b = 4
+
+[[models]]
+name = "Qwen3 32B"
+params_b = 32
+q4_gb = 22.0
+cat = "chat"
+tag = "qwen3:32b"
+kv_1k = 0.20
+note = "dense，质量稳"
+
+# ---- reason ----
+[[models]]
+name = "DeepSeek-R1-Distill-Qwen 32B"
+params_b = 32
+q4_gb = 22.1
+cat = "reason"
+tag = "deepseek-r1:32b"
+kv_1k = 0.20
+note = "思考链，慢但深"
+
+# ---- chat ----
+[[models]]
+name = "Qwen2.5 32B"
+params_b = 32
+q4_gb = 22.1
+cat = "chat"
+tag = "qwen2.5:32b"
+kv_1k = 0.20
+note = "中文老将，稳"
+
+# ---- code ----
+[[models]]
+name = "Qwen2.5 Coder 32B"
+params_b = 32
+q4_gb = 20.7
+cat = "code"
+tag = "qwen2.5-coder:32b"
+kv_1k = 0.20
+note = "补全强"
+
+# ---- chat ----
+[[models]]
+name = "GLM-4-32B-0414"
+params_b = 32
+q4_gb = 20.5
+cat = "chat"
+tag = "glm4:32b"
+kv_1k = 0.20
+note = "中文长文"
+
+# ---- agent ----
+[[models]]
+name = "Muse Glimmer 30B"
+params_b = 30
+q4_gb = 18.2
+cat = "agent"
+tag = ""
+kv_1k = 0.18
+note = "本地 coding agent 友好"
+
+[[models]]
+name = "Nemotron 3.5 Lightning 30B-A3B"
+params_b = 30
+q4_gb = 25.8
+cat = "agent"
+tag = ""
+kv_1k = 0.10
+note = "常驻 Agent，工具调用"
+active_b = 3
+
+# ---- chat ----
+[[models]]
+name = "GLM-4.7-Flash 30B"
+params_b = 30
+q4_gb = 19.2
+cat = "chat"
+tag = ""
+kv_1k = 0.10
+note = "快，中文"
+active_b = 3
+
+[[models]]
+name = "Granite 4.2 30B"
+params_b = 30
+q4_gb = 18.6
+cat = "chat"
+tag = "granite4.2:30b"
+kv_1k = 0.20
+note = "IBM，工程文档强"
+
+[[models]]
+name = "Qwen3.8 27B"
+params_b = 27.8
+q4_gb = 17.3
+cat = "chat"
+tag = ""
+kv_1k = 0.20
+note = "最新一代中文"
+
+[[models]]
+name = "Qwen3.6 27B"
+params_b = 27.8
+q4_gb = 18.9
+cat = "chat"
+tag = ""
+kv_1k = 0.20
+note = "上一代，稳"
+
+[[models]]
+name = "Gemma 3 27B"
+params_b = 27
+q4_gb = 18.6
+cat = "chat"
+tag = "gemma3:27b"
+kv_1k = 0.20
+note = "多语言写作"
+
+[[models]]
+name = "Mistral Small 3.1 24B"
+params_b = 24
+q4_gb = 15.4
+cat = "chat"
+tag = "mistral-small3.1"
+kv_1k = 0.18
+note = "英文最顺"
+
+# ---- code ----
+[[models]]
+name = "Devstral Small 2 24B"
+params_b = 24
+q4_gb = 15.4
+cat = "code"
+tag = ""
+kv_1k = 0.18
+note = "轻量代码 Agent"
+
+# ---- chat ----
+[[models]]
+name = "ERNIE 4.5 21B-A3B"
+params_b = 21
+q4_gb = 14.3
+cat = "chat"
+tag = "ernie4.5:21b-a3b"
+kv_1k = 0.10
+note = "文心，中文语感"
+active_b = 3
+
+# ---- reason ----
+[[models]]
+name = "gpt-oss 20B"
+params_b = 21
+q4_gb = 13.2
+cat = "reason"
+tag = "gpt-oss:20b"
+kv_1k = 0.10
+note = "轻量推理 MoE"
+active_b = 3.6
+
+[[models]]
+name = "Phi-4 14B"
+params_b = 14
+q4_gb = 10.8
+cat = "reason"
+tag = "phi4:14b"
+kv_1k = 0.16
+note = "数学推理强"
+
+# ---- chat ----
+[[models]]
+name = "Qwen3 14B"
+params_b = 14
+q4_gb = 10.7
+cat = "chat"
+tag = "qwen3:14b"
+kv_1k = 0.16
+note = "通用小钢炮"
+
+[[models]]
+name = "Qwen2.5 14B"
+params_b = 14
+q4_gb = 10.7
+cat = "chat"
+tag = "qwen2.5:14b"
+kv_1k = 0.16
+note = "本机已装"
+
+# ---- code ----
+[[models]]
+name = "Qwen2.5 Coder 14B"
+params_b = 14
+q4_gb = 10.1
+cat = "code"
+tag = "qwen2.5-coder:14b"
+kv_1k = 0.16
+note = "补全 + 解释"
+
+# ---- chat ----
+[[models]]
+name = "Ministral 3 14B"
+params_b = 14
+q4_gb = 9.4
+cat = "chat"
+tag = ""
+kv_1k = 0.16
+note = "边缘优化"
+
+[[models]]
+name = "Gemma 4 12B"
+params_b = 12
+q4_gb = 8.7
+cat = "chat"
+tag = ""
+kv_1k = 0.16
+note = "轻量写作"
+
+[[models]]
+name = "Mistral Nemo 12B"
+params_b = 12.2
+q4_gb = 8.6
+cat = "chat"
+tag = "mistral-nemo:12b"
+kv_1k = 0.16
+note = "128K 上下文"
+
+# ---- vision ----
+[[models]]
+name = "Llama 3.2 Vision 11B"
+params_b = 10.7
+q4_gb = 9.0
+cat = "vision"
+tag = "llama3.2-vision:11b"
+kv_1k = 0.16
+note = "看图问答"
+
+# ---- chat ----
+[[models]]
+name = "Qwen3 8B"
+params_b = 8
+q4_gb = 6.5
+cat = "chat"
+tag = "qwen3:8b"
+kv_1k = 0.13
+note = "日常够用"
+
+[[models]]
+name = "Llama 3.1 8B"
+params_b = 8
+q4_gb = 6.4
+cat = "chat"
+tag = "llama3.1:8b"
+kv_1k = 0.13
+note = "生态最广"
+
+# ---- vision ----
+[[models]]
+name = "Qwen2.5-VL 7B"
+params_b = 8.29
+q4_gb = 7.1
+cat = "vision"
+tag = "qwen2.5vl:7b"
+kv_1k = 0.13
+note = "文档/截图理解"
+
+# ---- chat ----
+[[models]]
+name = "Qwen2.5 7B"
+params_b = 7
+q4_gb = 6.1
+cat = "chat"
+tag = "qwen2.5:7b"
+kv_1k = 0.13
+note = "最快可用"
+
+# ---- light ----
+[[models]]
+name = "Qwen3 4B"
+params_b = 4
+q4_gb = 3.8
+cat = "light"
+tag = "qwen3:4b"
+kv_1k = 0.06
+note = "后台常驻"
+
+[[models]]
+name = "Gemma 3 4B"
+params_b = 4
+q4_gb = 3.8
+cat = "light"
+tag = "gemma3:4b"
+kv_1k = 0.06
+note = "轻量多语言"
+
+[[models]]
+name = "Phi-4-mini 3.8B"
+params_b = 3.82
+q4_gb = 3.8
+cat = "light"
+tag = "phi4-mini"
+kv_1k = 0.06
+note = "端侧推理"
+
+[[models]]
+name = "Qwen3 1.7B"
+params_b = 1.7
+q4_gb = 2.4
+cat = "light"
+tag = "qwen3:1.7b"
+kv_1k = 0.03
+note = "极速，摘要分类"
+
+[[models]]
+name = "Qwen2.5 1.5B"
+params_b = 1.54
+q4_gb = 2.2
+cat = "light"
+tag = "qwen2.5:1.5b"
+kv_1k = 0.03
+note = "常驻守护"
+
+# ---- vision ----
+[[models]]
+name = "Qwen3-VL 235B-A22B"
+params_b = 235
+q4_gb = 132
+cat = "vision"
+tag = ""
+kv_1k = 0.22
+note = "旗舰视觉，128G 也要留余地"
+active_b = 22
+
+[[models]]
+name = "Qwen2.5-VL 72B"
+params_b = 72
+q4_gb = 45.0
+cat = "vision"
+tag = ""
+kv_1k = 0.25
+note = "开源文档理解最强档之一"
+
+[[models]]
+name = "InternVL3 38B"
+params_b = 38
+q4_gb = 23.0
+cat = "vision"
+tag = ""
+kv_1k = 0.22
+note = "图表与 OCR 见长"
+
+[[models]]
+name = "Qwen3-VL 32B"
+params_b = 32
+q4_gb = 20.0
+cat = "vision"
+tag = ""
+kv_1k = 0.20
+note = "视觉 + 中文写作都行"
+
+[[models]]
+name = "Qwen2.5-VL 32B"
+params_b = 32
+q4_gb = 20.0
+cat = "vision"
+tag = ""
+kv_1k = 0.20
+note = "中文表格、发票、截图"
+
+[[models]]
+name = "InternVL3 14B"
+params_b = 14
+q4_gb = 8.8
+cat = "vision"
+tag = ""
+kv_1k = 0.16
+note = "视觉性价比档"
+
+[[models]]
+name = "Llama 3.2 Vision 90B"
+params_b = 90
+q4_gb = 55.0
+cat = "vision"
+tag = ""
+kv_1k = 0.24
+note = "大号看图，中文一般"
+
+[[models]]
+name = "MiniCPM-V 4.5 9B"
+params_b = 9
+q4_gb = 5.6
+cat = "vision"
+tag = ""
+kv_1k = 0.13
+note = "端侧视觉，响应快"
+
+[[models]]
+name = "Pixtral 12B"
+params_b = 12
+q4_gb = 7.4
+cat = "vision"
+tag = ""
+kv_1k = 0.16
+note = "Mistral 视觉模型"
+
+[[models]]
+name = "Molmo 7B"
+params_b = 7
+q4_gb = 4.8
+cat = "vision"
+tag = ""
+kv_1k = 0.13
+note = "指认式视觉问答"
+
+[[models]]
+name = "Qwen2.5-Omni 7B"
+params_b = 7
+q4_gb = 5.2
+cat = "vision"
+tag = ""
+kv_1k = 0.13
+note = "图像 + 音频输入"
+
+# ---- image ----
+[[models]]
+name = "FLUX.1-schnell"
+params_b = 12
+q4_gb = 7.0
+cat = "image"
+tag = ""
+kv_1k = 0.0
+note = "4 步出图，需 ComfyUI 或 sd.cpp"
+
+[[models]]
+name = "FLUX.1-dev"
+params_b = 12
+q4_gb = 12.0
+cat = "image"
+tag = ""
+kv_1k = 0.0
+note = "质量更好，显存吃得也多"
+
+[[models]]
+name = "Qwen-Image 20B"
+params_b = 20
+q4_gb = 12.0
+cat = "image"
+tag = ""
+kv_1k = 0.0
+note = "中文文字排版最准"
+
+[[models]]
+name = "SDXL"
+params_b = 3.5
+q4_gb = 3.5
+cat = "image"
+tag = ""
+kv_1k = 0.0
+note = "生态最全，插件多"
+
+[[models]]
+name = "Wan2.2 T2V A14B"
+params_b = 14
+q4_gb = 16.0
+cat = "image"
+tag = ""
+kv_1k = 0.0
+note = "文生视频，慢，占空间"
+
+# ---- speech ----
+[[models]]
+name = "Whisper Large v3 Turbo"
+params_b = 1.55
+q4_gb = 1.6
+cat = "speech"
+tag = ""
+kv_1k = 0.0
+note = "多语转写，标配"
+
+[[models]]
+name = "Parakeet TDT 0.6B"
+params_b = 0.6
+q4_gb = 0.7
+cat = "speech"
+tag = ""
+kv_1k = 0.0
+note = "英文转写极快"
+
+[[models]]
+name = "Kokoro 82M"
+params_b = 0.082
+q4_gb = 0.3
+cat = "speech"
+tag = ""
+kv_1k = 0.0
+note = "轻量 TTS，英文自然"
+
+[[models]]
+name = "CosyVoice2 0.5B"
+params_b = 0.5
+q4_gb = 0.5
+cat = "speech"
+tag = ""
+kv_1k = 0.0
+note = "中文 TTS，可克隆音色"
+
+# ---- rerank ----
+[[models]]
+name = "bge-reranker-v2-m3"
+params_b = 0.568
+q4_gb = 1.1
+cat = "rerank"
+tag = ""
+kv_1k = 0.0
+note = "中英重排，配 bge-m3"
+
+[[models]]
+name = "jina-reranker-v2"
+params_b = 0.278
+q4_gb = 0.6
+cat = "rerank"
+tag = ""
+kv_1k = 0.0
+note = "轻量重排"
+
+# ---- embed ----
+[[models]]
+name = "bge-m3"
+params_b = 0.568
+q4_gb = 1.2
+cat = "embed"
+tag = "bge-m3"
+kv_1k = 0.02
+note = "中英多语，MTEB 通用首选"
+
+[[models]]
+name = "nomic-embed-text"
+params_b = 0.137
+q4_gb = 0.27
+cat = "embed"
+tag = "nomic-embed-text"
+kv_1k = 0.01
+note = "轻量，长文检索"
+
+[[models]]
+name = "mxbai-embed-large"
+params_b = 0.334
+q4_gb = 0.65
+cat = "embed"
+tag = "mxbai-embed-large"
+kv_1k = 0.02
+note = "英文检索强"
+
+[[models]]
+name = "snowflake-arctic-embed2"
+params_b = 0.568
+q4_gb = 1.2
+cat = "embed"
+tag = "snowflake-arctic-embed2"
+kv_1k = 0.02
+note = "多语，企业检索"
+
+[[models]]
+name = "bge-large-zh-v1.5"
+params_b = 0.326
+q4_gb = 0.65
+cat = "embed"
+tag = ""
+kv_1k = 0.02
+note = "中文小语料最稳"
+
+[[models]]
+name = "Qwen3-Embedding 0.6B"
+params_b = 0.6
+q4_gb = 0.64
+cat = "embed"
+tag = ""
+kv_1k = 0.02
+note = "中文 + 多语，指令式"

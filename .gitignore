@@ -1,0 +1,26 @@
+# 构建产物
+build/
+rust/target/
+*.o
+*.dSYM/
+*.app/
+
+# 模型权重一律不入库（仓库只放清单与元数据）
+*.gguf
+*.safetensors
+*.bin
+*.onnx
+
+# 系统文件
+.DS_Store
+._*
+Thumbs.db
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+
+# 本地探针缓存与快照
+*.snapshot.png
+/tmp/

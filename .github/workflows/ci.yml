@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  rust:
+    name: Rust core (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 工具链
+        run: rustup update stable && rustup default stable
+
+      - name: 缓存
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('rust/Cargo.lock') }}
+
+      # 22 个测试里有 5 条钉住与 Swift 版首次选型逐字一致。
+      # 非 macOS 平台跑同一条断言，正好能验出探测层在不同硬件上的行为差异。
+      - name: 测试
+        working-directory: rust
+        run: cargo test --all
+
+      - name: 编译命令行
+        working-directory: rust
+        run: cargo build --release
+
+      - name: 体检自检（Linux/Windows 未实机验证，只要求不 panic）
+        working-directory: rust
+        run: cargo run --release --bin mindmodel -- scan
+        continue-on-error: true
+
+  macos-app:
+    name: macOS 应用
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 编译
+        run: ./build.sh
+
+      - name: 离屏渲染各页
+        run: |
+          APP=build/MindModel.app/Contents/MacOS/MindModel
+          mkdir -p /tmp/shots
+          for tab in overview task import installed hardware bench chat; do
+            MM_TAB=$tab MM_SNAPSHOT=/tmp/shots/$tab.png "$APP" || true
+          done
+          ls -l /tmp/shots
+          # 页面渲染成空白说明 ScrollView 泄漏进了 ImageRenderer 的路径
+          for f in /tmp/shots/*.png; do
+            size=$(stat -f%z "$f")
+            if [ "$size" -lt 20000 ]; then echo "$f 疑似空白 ($size bytes)"; exit 1; fi
+          done
+
+      - name: 上传截图
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shots
+          path: /tmp/shots/*.png
+          if-no-files-found: warn

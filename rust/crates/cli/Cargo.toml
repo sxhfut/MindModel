@@ -1,0 +1,13 @@
+[package]
+name = "mindmodel-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "mindmodel"
+path = "src/main.rs"
+
+[dependencies]
+mindmodel-core = { path = "../core" }
+mindmodel-probe = { path = "../probe" }
