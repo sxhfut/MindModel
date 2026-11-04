@@ -135,7 +135,7 @@
       <span style="font-weight:800;font-size:20px;">MindModel</span>
     </div>
     <h1>这台机器能跑什么模型、跑多快</h1>
-    <p class="tagline">按真实硬件给出可用模型清单与速度，结论背后每一个数字都可复算</p>
+    <p class="tagline">按本机硬件给出可用模型清单与速度，结论背后每一个数字都可复算</p>
     <p class="sub">本机大模型选型顾问：把「显存够不够」的粗略判断，拆成预算、需求、上下文、带宽、能力分五步可算的判定。免费、开源、可离线。</p>
     <div class="cta">
       <a class="btn btn-primary" href="https://github.com/sxhfut/MindModel">⭐ 在 GitHub 查看</a>
@@ -189,7 +189,7 @@ KV     = 2 × 层数 × KV头数 × head_dim × 2B × 上下文
 <span class="cm"># 档位 —— 需求占预算的比例</span>
 档位   = 需求/预算 ≤ 40% 余量足 / 72% 流畅 / 92% 可运行 / 115% 偏紧 / 超出
     </div>
-    <p class="muted" style="margin-top:14px;">速度这一行是整个工具的核心。MoE 只读被激活的专家，<code>0.45</code> 是实测拟合的效率系数，不是理论峰值。三条实现约束都是踩坑定下的：MoE 激活占比不钳下限、GGUF 数组按真实元素数跳过、估算值可被实测覆盖。</p>
+    <p class="muted" style="margin-top:14px;">速度这一行是整个工具的核心。MoE 只读被激活的专家，<code>0.45</code> 是实测拟合的效率系数，不是理论峰值。三条实现约束：MoE 激活占比不钳下限、GGUF 数组按元素数跳过、估算值可被实测覆盖。</p>
   </div>
 </section>
 
@@ -279,7 +279,7 @@ KV     = 2 × 层数 × KV头数 × head_dim × 2B × 上下文
       </div>
       <div class="card">
         <h3>⚡ 实测基准</h3>
-        <p>对已装模型跑真实生成，记录 tok/s，用实测值覆盖估算值，界面用颜色区分来源。</p>
+        <p>对已装模型跑一次生成，记录 tok/s，用实测值覆盖估算值，界面用颜色区分来源。</p>
       </div>
       <div class="card">
         <h3>💬 对话与智能体</h3>
@@ -331,7 +331,7 @@ KV     = 2 × 层数 × KV头数 × head_dim × 2B × 上下文
       <div style="display:flex;flex-direction:column;gap:14px;justify-content:center;">
         <div class="card" style="margin:0;">
           <h3>为什么内置目录不自动刷新？</h3>
-          <p>内置 79 条的独特价值在于<strong>手工标注的适配数据</strong>（体积 / KV / 速度档位），这些数据来自真实硬件的实测与踩坑，无法靠脚本自动生成。清单之外的模型，交给「在线搜索 + 无白名单导入」两条路覆盖。</p>
+          <p>内置 79 条的价值在于<strong>手工标注的适配数据</strong>（体积 / KV / 速度档位），这些数据来自实测，无法靠脚本自动生成。清单之外的模型，交给「在线搜索 + 无白名单导入」两条路覆盖。</p>
         </div>
         <div class="card" style="margin:0;">
           <h3>「没有限制的那些模型」呢？</h3>
@@ -346,7 +346,7 @@ KV     = 2 × 层数 × KV头数 × head_dim × 2B × 上下文
   <div class="wrap">
     <span class="kicker">界面</span>
     <h2>长什么样</h2>
-    <p class="lead">浅色界面，判定依据、门槛账目、筛选过程全部摆在明面上，每一个结论都能追溯。</p>
+    <p class="lead">浅色界面，判定依据、门槛账目、筛选过程逐项列出，每一个结论都能追溯到来源。</p>
     <div class="grid cols-2">
       <figure style="margin:0;">
         <img src="shots/overview.png" alt="总览页" style="width:100%;border-radius:12px;border:1px solid var(--line);" loading="lazy">
@@ -358,7 +358,7 @@ KV     = 2 × 层数 × KV头数 × head_dim × 2B × 上下文
       </figure>
       <figure style="margin:0;">
         <img src="shots/task-narrow.png" alt="筛选过程" style="width:100%;border-radius:12px;border:1px solid var(--line);" loading="lazy">
-        <figcaption class="muted" style="margin-top:8px;">筛选账目：候选池逐步收窄，哪道门槛砍得最狠一眼看出</figcaption>
+        <figcaption class="muted" style="margin-top:8px;">筛选账目：候选池逐步收窄，哪道门槛砍掉最多候选一目了然</figcaption>
       </figure>
       <figure style="margin:0;">
         <img src="shots/agent.png" alt="智能体" style="width:100%;border-radius:12px;border:1px solid var(--line);" loading="lazy">
@@ -371,8 +371,8 @@ KV     = 2 × 层数 × KV头数 × head_dim × 2B × 上下文
 <section>
   <div class="wrap">
     <span class="kicker">覆盖度</span>
-    <h2>诚实的平台矩阵</h2>
-    <p class="lead">「能编译」≠「支持」。每个平台都标注验证状态，不把没实测的写成已支持。</p>
+    <h2>平台支持矩阵</h2>
+    <p class="lead">「能编译」≠「支持」。每个平台标注验证状态：已实测、需实机验证、风险最高。</p>
     <table>
       <thead>
         <tr><th>平台</th><th>探测</th><th>推理后端</th><th>入口</th><th>状态</th></tr>
@@ -456,7 +456,7 @@ cargo run -p mindmodel-server
       </div>
       <div class="card">
         <h3>能跑文生图吗？</h3>
-        <p>清单里有 FLUX、SDXL 等图像模型，但 Ollama 跑不了图，需要 ComfyUI 或 stable-diffusion.cpp 作为独立后端。应用会检测并引导安装，不虚标「点一下出图」。</p>
+        <p>清单里有 FLUX、SDXL 等图像模型，但 Ollama 跑不了图，需要 ComfyUI 或 stable-diffusion.cpp 作为独立后端。应用会检测并引导安装。</p>
       </div>
     </div>
   </div>
