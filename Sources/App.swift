@@ -99,6 +99,11 @@ final class AppState: ObservableObject {
     @Published var log = ""
     @Published var busy: String?
 
+    // 长上下文稳定性测试（needle-in-haystack）
+    @Published var lctxRunning = false
+    @Published var lctxResult: String?      // 测试结论文字
+    @Published var lctxDetail: String?      // 详细（上下文长度、是否答对、token 数）
+
     // 模型拉取进度（ollama pull 实时解析）
     /// 正在拉取的模型 tag；nil 表示当前没有进行中的拉取
     @Published var pullTag: String?
@@ -130,6 +135,12 @@ final class AppState: ObservableObject {
     /// 正在下载的文件（含进度：已下载/总字节）
     @Published var msDownloading: (path: String, received: Int64, total: Int64)?
     @Published var msDownloaded: URL?
+
+    // HuggingFace 应用内直下（与魔搭并行的一套状态）
+    @Published var hfListing: HFListing?
+    @Published var hfFiles: [HFFile] = []
+    @Published var hfFilesLoading = false
+    @Published var hfDownloading: (path: String, received: Int64, total: Int64)?
 
     // 模型仓库
     @Published var disk = DiskScan()
@@ -496,10 +507,10 @@ final class AppState: ObservableObject {
     }
 
     func openHF(_ name: String) {
-        let q = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? name
-        if let u = URL(string: "https://hf-mirror.com/models?search=\(q)%20GGUF") {
-            NSWorkspace.shared.open(u)
-        }
+        // 不跳出应用：跳转到「在线模型」页签并预填搜索词，应用内搜魔搭（国内直连）
+        hfQuery = name
+        tab = .online
+        searchHF()
     }
 
     /// 在应用内搜索 GGUF 模型（HuggingFace + 魔搭双源，不跳浏览器）。
@@ -644,13 +655,72 @@ final class AppState: ObservableObject {
         }
     }
 
+    // MARK: - HuggingFace 应用内直下
+
+    /// 打开某个 HF 仓库的文件列表弹层（点「下载」时调用）。
+    func listHFFiles(_ modelId: String) {
+        hfListing = HFListing(modelId: modelId)
+        hfFiles = []
+        hfFilesLoading = true
+        Task {
+            do {
+                let files = try await HFSearch.ggufFiles(modelId)
+                await MainActor.run {
+                    self.hfFiles = files
+                    self.hfFilesLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.hfFilesLoading = false
+                    self.toast = "读取文件列表失败：\(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    /// 应用内直下 HF 仓库的某个 .gguf 文件（走 hf-mirror resolve 直链）。
+    func downloadHFFile(_ file: HFFile) {
+        guard let listing = hfListing, let url = file.downloadURL(modelId: listing.modelId) else { return }
+        if hfDownloading != nil || msDownloading != nil {
+            toast = "已有文件在下载，请稍候"
+            return
+        }
+        let dir = Self.downloadDir()
+        hfDownloading = (path: file.path, received: 0, total: Int64(file.size))
+        Task {
+            do {
+                let saved = try await MSDownload.download(url: url, saveName: (file.path as NSString).lastPathComponent, to: dir
+                ) { recv, total in
+                    Task { @MainActor in
+                        self.hfDownloading = (path: file.path, received: recv, total: total)
+                    }
+                }
+                await MainActor.run {
+                    self.hfDownloading = nil
+                    self.toast = "已下载 \(file.path)，正在解析…"
+                    self.loadGGUF(paths: [saved.path])
+                }
+            } catch {
+                await MainActor.run {
+                    self.hfDownloading = nil
+                    self.toast = "下载失败：\(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
     func openInstalledApp(_ name: String) {
         for e in engines where e.name == name && e.ready {
             // 命令行工具（如 sd/sd-server）不是可双击的应用，打开文档页而非文件
             if e.name == "stable-diffusion.cpp" || e.name == "llama.cpp" {
                 if let u = URL(string: e.installURL) { NSWorkspace.shared.open(u) }
-            } else {
+            } else if FileManager.default.fileExists(atPath: e.path) {
+                // path 是真实可打开的文件/应用才 open；否则（如 Apple MLX 的"系统"）回退到文档页
                 NSWorkspace.shared.open(URL(fileURLWithPath: e.path))
+            } else if let u = URL(string: e.installURL) {
+                NSWorkspace.shared.open(u)
+            } else {
+                toast = "\(name) 是系统内置引擎，无需单独打开"
             }
             return
         }
@@ -917,6 +987,41 @@ final class AppState: ObservableObject {
                 self.disk = d
                 self.issues = list
                 self.auditing = false
+            }
+        }
+    }
+
+    /// 回收孤儿 blob：删除没有被任何模型引用的数据块，释放磁盘。
+    /// 只删 `disk.orphanBlobs` 里的 path，逐个删除并统计释放的空间。
+    func reclaimOrphans() {
+        let blobs = disk.orphanBlobs
+        guard !blobs.isEmpty else {
+            toast = "没有可回收的无主数据块"
+            return
+        }
+        busy = "回收孤儿数据块"
+        DispatchQueue.global(qos: .utility).async {
+            var freed: Double = 0
+            var deleted = 0
+            for b in blobs {
+                if FileManager.default.fileExists(atPath: b.path) {
+                    do {
+                        try FileManager.default.removeItem(atPath: b.path)
+                        freed += b.sizeGB
+                        deleted += 1
+                    } catch {
+                        // 单个失败不中断，继续删其余
+                    }
+                }
+            }
+            DispatchQueue.main.async {
+                self.busy = nil
+                if deleted > 0 {
+                    self.toast = String(format: "已回收 %d 个数据块，释放 %.1f GB", deleted, freed)
+                } else {
+                    self.toast = "没有删除任何数据块"
+                }
+                self.scanDisk()   // 重新扫描，刷新可回收量
             }
         }
     }
@@ -1429,6 +1534,73 @@ final class AppState: ObservableObject {
         benchRecords.removeValue(forKey: model)
     }
 
+    /// 长上下文稳定性测试（needle-in-haystack）。
+    /// 造一段 N token 的"干草"文本，在末尾藏一根"针"（一个独特的人名+数字），
+    /// 让模型读完整个上下文后回答"针是什么"。答对=长上下文没有崩塌，答错=在长
+    /// 上下文下注意力/精度已经失效。这正是"本地模型部署即变笨"的关键检测。
+    func runLongContextTest(model: String, targetTokens: Int = 32000) {
+        guard !lctxRunning else { return }
+        lctxRunning = true
+        lctxResult = nil
+        lctxDetail = nil
+        benchMsg = "正在生成 \(targetTokens) token 长上下文并测试…"
+        Task {
+            defer { lctxRunning = false }
+            // 干草：大量无关的中文段落，反复拼接逼近目标 token 数（中文约 1.5 字/token）
+            let hayUnit = "这是一段用于填充上下文的无关文本。它描述了一个普通的午后，窗外的树叶在风中轻轻摆动，远处偶尔传来几声鸟鸣。桌上放着一杯已经凉了的茶，杯壁凝着一层细小的水珠。"
+            let needle = "（重要提醒：本次任务的验证码是紫荆花四二七八。）"
+            var hay = ""
+            var approx = 0
+            while approx < targetTokens {
+                hay += hayUnit
+                approx += 80   // hayUnit 约 80 token
+            }
+            // 针放在最后，紧邻问题，测"读完整段后能否提取尾部信息"
+            let prompt = hay + "\n\n" + needle + "\n\n" + "请只回答：上面提到的验证码是什么？"
+
+            guard let url = URL(string: "http://127.0.0.1:11434/api/generate") else {
+                await MainActor.run { self.benchMsg = "Ollama 地址无效" }
+                return
+            }
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.timeoutInterval = 900
+            let body: [String: Any] = [
+                "model": model,
+                "prompt": prompt,
+                "stream": false,
+                "options": ["num_predict": 32, "temperature": 0.0, "num_ctx": max(targetTokens + 2048, 4096)]
+            ]
+            req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+            do {
+                let (data, _) = try await URLSession.shared.data(for: req)
+                guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    await MainActor.run { self.benchMsg = "返回无法解析" }
+                    return
+                }
+                let answer = (obj["response"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let ctxLen = (obj["prompt_eval_count"] as? NSNumber)?.intValue ?? approx
+                let correct = answer.contains("紫荆花") || answer.contains("4278") || answer.contains("四二七八")
+                await MainActor.run {
+                    self.lctxDetail = "上下文 \(ctxLen) token · 模型回答「\(answer)」"
+                    if correct {
+                        self.lctxResult = "✅ 长上下文稳定：正确提取出「紫荆花四二七八」"
+                        self.benchMsg = "长上下文测试通过"
+                    } else {
+                        self.lctxResult = "⚠️ 长上下文可能已失效：模型答「\(answer)」，未提取到正确答案"
+                        self.benchMsg = "长上下文测试失败——这个模型在 \(ctxLen) token 下已不稳定"
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    self.benchMsg = "测试失败：\(error.localizedDescription)"
+                    self.lctxResult = "❌ 测试出错：\(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
     /// 从已装模型名反查内置清单条目，用来给实测值配一个估算值做对照。
     /// 同名直接命中；否则按家族 + 参数量就近配，差超过 25% 视为清单外的模型
     /// （自己转换的 GGUF 经常不在清单里，这时不要硬凑一个估算值）。
@@ -1461,6 +1633,32 @@ final class AppState: ObservableObject {
     }
 
     // MARK: - 报告
+
+    /// 导出实测记录为独立 markdown 文件。
+    func exportBench() {
+        guard !benchRecords.isEmpty else {
+            toast = "还没有实测记录"
+            return
+        }
+        var s = "# MindModel 实测记录\n\n"
+        s += "生成时间：\(Date())\n\n"
+        s += "| 模型 | 实测 tok/s | 预填充 tok/s | tokens | 时间 |\n|---|---|---|---|---|\n"
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd HH:mm"
+        for r in benchRecords.values.sorted(by: { $0.tps > $1.tps }) {
+            s += String(format: "| %@ | %.1f | %.0f | %d | %@ |\n",
+                        r.model, r.tps, r.prefill, r.tokens, f.string(from: r.at))
+        }
+        s += "\n> 实测值以本机 Ollama 运行为准，同一模型两次差 5% 以上会标注。\n"
+        let path = NSHomeDirectory() + "/Desktop/MindModel实测记录-\(Int(Date().timeIntervalSince1970)).md"
+        do {
+            try s.write(toFile: path, atomically: true, encoding: .utf8)
+            toast = "实测记录已导出到桌面"
+            NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: NSHomeDirectory() + "/Desktop")
+        } catch {
+            toast = "导出失败：\(error.localizedDescription)"
+        }
+    }
 
     func exportReport() {
         var s = "# MindModel 本机体检报告\n\n"
@@ -1498,9 +1696,13 @@ final class AppState: ObservableObject {
         }
         s += "\n> 体积与适配参考 localmodel.run（2026-11）；速度为估算，实测值以本机运行为准。\n"
         let path = NSHomeDirectory() + "/Desktop/MindModel体检报告-\(Int(Date().timeIntervalSince1970)).md"
-        try? s.write(toFile: path, atomically: true, encoding: .utf8)
-        toast = "已导出到桌面"
-        NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: NSHomeDirectory() + "/Desktop")
+        do {
+            try s.write(toFile: path, atomically: true, encoding: .utf8)
+            toast = "已导出到桌面"
+            NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: NSHomeDirectory() + "/Desktop")
+        } catch {
+            toast = "导出失败：\(error.localizedDescription)"
+        }
     }
 }
 

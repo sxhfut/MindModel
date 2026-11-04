@@ -1126,6 +1126,14 @@ struct InstalledView: View {
                                     }
                                     .buttonStyle(.bordered).controlSize(.small)
                                     .tint(T.bad)
+                                } else if i.model == nil && s.disk.reclaimableGB > 0.05 {
+                                    // 孤儿数据块：给出回收入口
+                                    Button("回收 \(String(format: "%.1f GB", s.disk.reclaimableGB))") {
+                                        s.reclaimOrphans()
+                                    }
+                                    .buttonStyle(.bordered).controlSize(.small)
+                                    .tint(T.warn)
+                                    .disabled(s.busy != nil)
                                 }
                             }
                         }
@@ -1386,6 +1394,9 @@ struct OnlineModelsView: View {
         .sheet(item: $s.msListing) { listing in
             MSFilesSheet(org: listing.org, name: listing.name, model: listing.model)
         }
+        .sheet(item: $s.hfListing) { listing in
+            HFFilesSheet(modelId: listing.modelId)
+        }
     }
 
     func sourceChip(_ label: String, _ idx: Int, _ count: Int) -> some View {
@@ -1436,13 +1447,11 @@ struct HFRow: View {
                     }
                 }
                 Spacer(minLength: 8)
-                Button("下载") { s.downloadHF(model.modelId) }
-                    .buttonStyle(.bordered).controlSize(.small)
-                    .disabled(s.busy != nil)
-                    .help("huggingface-cli download \(model.modelId) --include *.gguf")
+                Button("下载") { s.listHFFiles(model.modelId) }
+                    .buttonStyle(.borderedProminent).controlSize(.small)
+                    .help("应用内列出 .gguf 文件后直接下载，无需 huggingface-cli")
                 Button("详情") { s.openHFModel(model.modelId) }
-                    .buttonStyle(.plain).controlSize(.small)
-                    .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                    .buttonStyle(.bordered).controlSize(.small)
             }
         }
     }
@@ -1545,6 +1554,85 @@ struct MSFilesSheet: View {
                 ProgressView().controlSize(.small)
             } else {
                 Button("下载") { s.downloadMSFile(f) }
+                    .buttonStyle(.bordered).controlSize(.small)
+            }
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+    }
+
+    func fmt(_ b: Int64) -> String {
+        if b >= 1_073_741_824 { return String(format: "%.2f GB", Double(b) / 1_073_741_824.0) }
+        if b >= 1_048_576 { return String(format: "%.1f MB", Double(b) / 1_048_576.0) }
+        return "\(b) B"
+    }
+}
+
+/// HuggingFace 仓库文件列表弹层：列出 .gguf 文件，点选后应用内直下（走 hf-mirror）。
+struct HFFilesSheet: View {
+    @EnvironmentObject var s: AppState
+    @Environment(\.dismiss) var dismiss
+    let modelId: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("选择要下载的 .gguf").font(.system(size: 15, weight: .semibold))
+                    Text(modelId).font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("关闭") { dismiss() }.buttonStyle(.bordered).controlSize(.small)
+            }
+
+            if s.hfFilesLoading {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("正在读取文件列表…").font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 120)
+            } else if s.hfFiles.isEmpty {
+                Text("该仓库没有 .gguf 文件（可能是 safetensors 原始权重，需自行转换）。")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 120)
+            } else {
+                ScrollView {
+                    VStack(spacing: 8) {
+                        ForEach(s.hfFiles) { f in
+                            fileRow(f)
+                        }
+                    }
+                }
+            }
+
+            if let d = s.hfDownloading {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(d.path).font(.system(size: 11, weight: .medium)).lineLimit(1)
+                    ProgressView(value: d.total > 0 ? Double(d.received) / Double(d.total) : 0)
+                    Text(d.total > 0
+                         ? "\(fmt(d.received)) / \(fmt(d.total))"
+                         : "已下载 \(fmt(d.received))")
+                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                }
+                .padding(.top, 4)
+            }
+        }
+        .padding(18)
+        .frame(width: 520, height: 420)
+    }
+
+    func fileRow(_ f: HFFile) -> some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(f.path).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                Text(f.sizeGB).font(.system(size: 10.5)).foregroundStyle(.secondary)
+            }
+            Spacer()
+            let isThis = s.hfDownloading?.path == f.path
+            if isThis {
+                ProgressView().controlSize(.small)
+            } else {
+                Button("下载") { s.downloadHFFile(f) }
                     .buttonStyle(.bordered).controlSize(.small)
             }
         }
@@ -2234,6 +2322,8 @@ struct BenchView: View {
                         }
                         Spacer()
                         if !rows.isEmpty {
+                            Button("导出实测") { s.exportBench() }
+                                .buttonStyle(.bordered).controlSize(.small)
                             Button("清空记录") {
                                 for r in rows { s.clearBench(r.model) }
                             }
@@ -2261,6 +2351,40 @@ struct BenchView: View {
                            tint: (gaps.isEmpty ? Color.secondary : (gaps.sorted()[gaps.count / 2] < -10 ? T.warn : .primary)))
                 MetricCard(title: "内存带宽", value: s.bandwidth.map { String(format: "%.0f", $0) } ?? "—",
                            sub: "GB/s，速度估算的输入")
+            }
+
+            // 长上下文稳定性测试
+            Card {
+                VStack(alignment: .leading, spacing: 8) {
+                    SectionHead(title: "长上下文稳定性测试",
+                                sub: "喂一段 32K token 的文本，看模型能否提取藏在末尾的答案——测的是「部署即变笨」")
+                    HStack(spacing: 8) {
+                        Picker("", selection: $s.pickedModel) {
+                            Text("选择模型").tag("")
+                            ForEach(s.installed.filter { $0.engine == "Ollama" }) { m in
+                                Text(m.name).tag(m.name)
+                            }
+                        }
+                        .labelsHidden().frame(width: 240).controlSize(.small)
+
+                        Button(s.lctxRunning ? "测试中…" : "跑长上下文测试") {
+                            if !s.pickedModel.isEmpty { s.runLongContextTest(model: s.pickedModel) }
+                        }
+                        .buttonStyle(.borderedProminent).controlSize(.small)
+                        .disabled(s.pickedModel.isEmpty || s.lctxRunning)
+                        Spacer()
+                    }
+                    if let r = s.lctxResult {
+                        Text(r).font(.system(size: 12))
+                            .foregroundStyle(r.hasPrefix("✅") ? T.good : T.warn)
+                    }
+                    if let d = s.lctxDetail {
+                        Text(d).font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                    Text("短对话看不出问题，超过 32K 后 KV 缓存精度和注意力误差会累积，导致模型答非所问、工具调用失败。这个测试用「大海捞针」法：把答案藏在长文本末尾，答对说明长上下文还稳定。")
+                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             if rows.isEmpty {

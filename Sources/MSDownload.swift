@@ -85,8 +85,13 @@ enum MSDownload {
         guard let url = URL(string: urlStr) else {
             throw NSError(domain: "MS", code: -1, userInfo: [NSLocalizedDescriptionKey: "下载地址无效"])
         }
-
         let saveName = (filePath as NSString).lastPathComponent
+        return try await download(url: url, saveName: saveName, to: dir, onProgress: onProgress)
+    }
+
+    /// 通用直链流式下载（魔搭与 HuggingFace 直链共用）。
+    static func download(url: URL, saveName: String, to dir: URL,
+                         onProgress: @escaping (Int64, Int64) -> Void) async throws -> URL {
         let dest = dir.appendingPathComponent(saveName)
 
         // 已存在部分文件则断点续传
@@ -119,7 +124,7 @@ enum MSDownload {
 }
 
 /// 流式下载：DataDelegate 逐块写盘，回报进度。不把整个文件留在内存。
-private final class StreamDownloader: NSObject, URLSessionDataDelegate {
+final class StreamDownloader: NSObject, URLSessionDataDelegate {
     let dest: URL
     var resumeAt: Int64
     let onProgress: (Int64, Int64) -> Void

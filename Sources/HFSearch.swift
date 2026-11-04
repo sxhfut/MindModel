@@ -77,7 +77,7 @@ enum HFSearch {
         return try JSONDecoder().decode([HFModel].self, from: data)
     }
 
-    /// 列出某个仓库里的所有 .gguf 文件（含大小），用于给用户看"这个仓库有哪些量化可选"。
+    /// 列出某个仓库里的所有 .gguf / .mmproj 文件（含大小），用于给用户看"这个仓库有哪些量化可选"。
     static func ggufFiles(_ modelId: String) async throws -> [HFFile] {
         let url = URL(string: "https://hf-mirror.com/api/models/\(modelId)/tree/main")!
         let (data, resp) = try await URLSession.shared.data(from: url)
@@ -86,22 +86,38 @@ enum HFSearch {
                           userInfo: [NSLocalizedDescriptionKey: "无法读取仓库文件列表"])
         }
         let files = try JSONDecoder().decode([HFFile].self, from: data)
-        return files.filter { $0.path.lowercased().hasSuffix(".gguf") }
+        return files
+            .filter { $0.type == "file" }
+            .filter { $0.path.lowercased().hasSuffix(".gguf") || $0.path.lowercased().hasSuffix(".mmproj") }
+            .sorted { $0.size > $1.size }
     }
 }
 
 /// 仓库树里的一个文件
-struct HFFile: Codable {
+struct HFFile: Codable, Identifiable {
     let path: String
     let size: Int
     let type: String
+    var id: String { path }
 
-    var sizeGB: Double { Double(size) / 1_073_741_824.0 }
-    var downloadURL: URL? {
-        // 直链格式：https://hf-mirror.com/{model}/resolve/main/{path}
-        let p = path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? path
-        return URL(string: "https://hf-mirror.com/\(p)") // 占位，实际拼在调用处
+    var sizeGB: String {
+        let gb = Double(size) / 1_073_741_824.0
+        if gb >= 1 { return String(format: "%.1f GB", gb) }
+        return String(format: "%.0f MB", Double(size) / 1_048_576.0)
     }
+
+    /// 直链（走 hf-mirror resolve，国内可达）：
+    /// https://hf-mirror.com/{modelId}/resolve/main/{path}
+    func downloadURL(modelId: String) -> URL? {
+        let p = path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? path
+        return URL(string: "https://hf-mirror.com/\(modelId)/resolve/main/\(p)")
+    }
+}
+
+/// 一个正在浏览文件列表的 HF 仓库（用于 sheet(item:) 弹层）。
+struct HFListing: Identifiable {
+    let modelId: String
+    var id: String { modelId }
 }
 
 // MARK: - ModelScope（魔搭）在线搜索

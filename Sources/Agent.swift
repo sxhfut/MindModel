@@ -100,13 +100,13 @@ enum AgentTools {
     }
 }
 
-/// 工具执行器。所有路径操作都在用户主目录 + 明确授权目录内。
-/// run_command 与 write_file 是"有副作用"的，调用前由上层确认。
+/// 工具执行器。写文件与执行命令是"有副作用"的，调用前由 AppState 弹确认框。
+/// 注意：当前没有路径白名单——模型可写任意绝对路径、执行任意 shell 命令，
+/// 因此写/命令操作必须依赖上层的用户确认（confirmTool）来兜底，不能静默执行。
 enum AgentExecutor {
 
     /// 执行一条工具调用，返回结果。
-    /// 注意：run_command 在这里只是占位——真正的命令执行需要走 AppState 的确认流程，
-    /// 所以本函数只处理纯读操作；写/命令操作返回一个特殊标记，由 AppState 接手。
+    /// 纯读操作（read/list/search）直接执行；写文件/命令由上层确认后再调用到这里。
     static func execute(_ call: ToolCall) -> ToolResult {
         switch call.name {
         case "read_file":
