@@ -1333,7 +1333,7 @@ struct OnlineModelsView: View {
             Card {
                 VStack(alignment: .leading, spacing: 8) {
                     SectionHead(title: "搜索在线 GGUF 模型",
-                                sub: "清单外的模型也能找。HuggingFace + 魔搭双源，结果按下载量排序。")
+                                sub: "清单外的模型也能找。魔搭（国内直连）+ HuggingFace 双源，按下载量排序。")
                     HStack(spacing: 8) {
                         TextField("搜模型名，如 qwen / llama / mistral…", text: $s.hfQuery)
                             .textFieldStyle(.roundedBorder)
@@ -1347,37 +1347,37 @@ struct OnlineModelsView: View {
                     }
                     // 双源切换
                     HStack(spacing: 8) {
-                        sourceChip("HuggingFace", 0, s.hfResults.count)
                         sourceChip("魔搭 ModelScope", 1, s.msResults.count)
+                        sourceChip("HuggingFace", 0, s.hfResults.count)
                         Spacer()
                     }
                     if s.hfSearching {
                         HStack(spacing: 7) {
                             ProgressView().controlSize(.small)
-                            Text("正在搜索 HuggingFace 与魔搭…").font(.system(size: 11.5)).foregroundStyle(.secondary)
+                            Text("正在搜索魔搭与 HuggingFace…").font(.system(size: 11.5)).foregroundStyle(.secondary)
                         }
                     }
                     if let err = s.hfError {
                         Text(err).font(.system(size: 11.5)).foregroundStyle(T.bad)
                     }
-                    Text("模型来自社区仓库，license 各不相同；下载后到「导入 GGUF」注册即可使用，无模型白名单。")
+                    Text("国内直连魔搭即可搜到大量 GGUF 仓库（含 unsloth / ISTA-DASLab）；HuggingFace 源需能访问 huggingface.co 的网络。下载后到「导入 GGUF」注册即可用，无白名单。")
                         .font(.system(size: 10.5)).foregroundStyle(.secondary)
                 }
             }
 
-            if s.searchSource == 0 {
-                if !s.hfResults.isEmpty {
-                    SectionHead(title: "HuggingFace（\(s.hfResults.count) 个）",
-                                sub: "按下载量排序 · 点「下载」走 huggingface-cli，或「详情」手动下")
-                    ForEach(s.hfResults) { m in HFRow(model: m) }
-                } else if s.hfSearched && !s.hfSearching {
-                    emptyCard()
-                }
-            } else {
+            if s.searchSource == 1 {
                 if !s.msResults.isEmpty {
                     SectionHead(title: "魔搭（\(s.msResults.count) 个）",
                                 sub: "按下载量排序 · 点「详情」到魔搭页面下载")
                     ForEach(s.msResults) { m in MSRow(model: m) }
+                } else if s.hfSearched && !s.hfSearching {
+                    emptyCard()
+                }
+            } else {
+                if !s.hfResults.isEmpty {
+                    SectionHead(title: "HuggingFace（\(s.hfResults.count) 个）",
+                                sub: "按下载量排序 · 点「下载」走 huggingface-cli，或「详情」手动下")
+                    ForEach(s.hfResults) { m in HFRow(model: m) }
                 } else if s.hfSearched && !s.hfSearching {
                     emptyCard()
                 }

@@ -118,8 +118,8 @@ final class AppState: ObservableObject {
     @Published var hfSearching = false
     @Published var hfError: String?
     @Published var hfSearched = false
-    /// 搜索源：0 = HuggingFace，1 = 魔搭 ModelScope
-    @Published var searchSource = 0
+    /// 搜索源：0 = HuggingFace，1 = 魔搭 ModelScope（国内默认）
+    @Published var searchSource = 1
 
     // 模型仓库
     @Published var disk = DiskScan()
@@ -485,31 +485,33 @@ final class AppState: ObservableObject {
 
     func openHF(_ name: String) {
         let q = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? name
-        if let u = URL(string: "https://huggingface.co/models?search=\(q)%20GGUF") {
+        if let u = URL(string: "https://hf-mirror.com/models?search=\(q)%20GGUF") {
             NSWorkspace.shared.open(u)
         }
     }
 
     /// 在应用内搜索 GGUF 模型（HuggingFace + 魔搭双源，不跳浏览器）。
+    /// 双源独立容错：一个源失败不拖垮另一个。
     func searchHF() {
         let q = hfQuery
         hfSearching = true
         hfError = nil
         Task {
-            do {
-                async let hf = HFSearch.search(q, limit: 50)
-                async let ms = MSSearch.search(q, limit: 50)
-                let (hfR, msR) = try await (hf, ms)
-                await MainActor.run {
-                    self.hfResults = hfR
-                    self.msResults = msR
-                    self.hfSearching = false
-                    self.hfSearched = true
-                }
-            } catch {
-                await MainActor.run {
-                    self.hfSearching = false
-                    self.hfError = "搜索失败：\(error.localizedDescription)。请检查网络。"
+            async let hf: [HFModel]? = try? HFSearch.search(q, limit: 50)
+            async let ms: [MSModel]? = try? MSSearch.search(q, limit: 50)
+            let (hfR, msR) = await (hf, ms)
+
+            await MainActor.run {
+                self.hfSearching = false
+                self.hfSearched = true
+                if let r = hfR { self.hfResults = r }
+                if let r = msR { self.msResults = r }
+                if hfR == nil && msR == nil {
+                    self.hfError = "双源都失败。HuggingFace 走 hf-mirror 镜像，魔搭直连，请检查网络。"
+                } else if hfR == nil || msR == nil {
+                    self.hfError = "部分源失败：\(hfR == nil ? "HuggingFace" : "魔搭") 未返回结果。"
+                } else {
+                    self.hfError = nil
                 }
             }
         }
@@ -517,13 +519,14 @@ final class AppState: ObservableObject {
 
     /// 打开某个 HF 模型的详情页（浏览器）
     func openHFModel(_ modelId: String) {
-        if let u = URL(string: "https://huggingface.co/\(modelId)") {
+        if let u = URL(string: "https://hf-mirror.com/\(modelId)") {
             NSWorkspace.shared.open(u)
         }
     }
 
     /// 把某个 HF 模型仓库的 .gguf 文件下载到本地（走 huggingface-cli 或直链）。
     /// 这里用 `huggingface-cli download`（若装了）或引导用户手动下。
+    /// 通过 HF_ENDPOINT 让 huggingface-cli 走 hf-mirror 镜像，否则国内直连会失败。
     func downloadHF(_ modelId: String) {
         let p = Sh.find("huggingface-cli") ?? Sh.find("hf")
         if let cli = p {
@@ -533,6 +536,9 @@ final class AppState: ObservableObject {
                 let proc = Process()
                 proc.executableURL = URL(fileURLWithPath: cli)
                 proc.arguments = ["download", modelId, "--include", "*.gguf"]
+                var env = ProcessInfo.processInfo.environment
+                env["HF_ENDPOINT"] = "https://hf-mirror.com"
+                proc.environment = env
                 let pipe = Pipe()
                 proc.standardOutput = pipe
                 proc.standardError = pipe
