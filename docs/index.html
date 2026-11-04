@@ -295,6 +295,55 @@ KV     = 2 × 层数 × KV头数 × head_dim × 2B × 上下文
 
 <section>
   <div class="wrap">
+    <span class="kicker">模型来源</span>
+    <h2>专注本地模型，来源不设白名单</h2>
+    <p class="lead">MindModel 只关心「这台机器能不能跑」，不替你圈定该用谁家的模型。三层来源各司其职：内置清单负责「装得下、跑得快」的精准判断，在线搜索负责「清单之外」的广撒网，GGUF 导入负责「任意 .gguf 都能进」的兜底。</p>
+    <table>
+      <thead>
+        <tr><th>来源</th><th>是什么</th><th>刷新方式</th><th>适合谁</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>内置精选目录</td>
+          <td>79 条手工标注的模型清单，含体积 / KV / 实测带宽等适配数据</td>
+          <td>手工维护（适配数据无法自动生成）</td>
+          <td>想要「可复算判断」的大多数人</td>
+        </tr>
+        <tr>
+          <td>在线搜索</td>
+          <td>并行搜 Hugging Face + ModelScope，按下载量排序，实时拉取 GGUF 仓库</td>
+          <td>每次搜索实时请求，无本地缓存</td>
+          <td>想找清单之外、最新发布模型的人</td>
+        </tr>
+        <tr>
+          <td>GGUF 导入</td>
+          <td>拖入任意 .gguf 或整个目录，自动识别分片与投影器</td>
+          <td>即拖即用，<strong>无模型白名单</strong></td>
+          <td>手头已有 .gguf、或想自定义模型的人</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="grid cols-2" style="margin-top:20px;">
+      <figure style="margin:0;">
+        <img src="shots/online-models.png" alt="在线模型搜索" style="width:100%;border-radius:12px;border:1px solid var(--line);" loading="lazy">
+        <figcaption class="muted" style="margin-top:8px;">在线模型：双源切换（Hugging Face / 魔搭），按下载量排序，一键下载或跳详情</figcaption>
+      </figure>
+      <div style="display:flex;flex-direction:column;gap:14px;justify-content:center;">
+        <div class="card" style="margin:0;">
+          <h3>为什么内置目录不自动刷新？</h3>
+          <p>内置 79 条的独特价值在于<strong>手工标注的适配数据</strong>（体积 / KV / 速度档位），这些数据来自真实硬件的实测与踩坑，无法靠脚本自动生成。清单之外的模型，交给「在线搜索 + 无白名单导入」两条路覆盖。</p>
+        </div>
+        <div class="card" style="margin:0;">
+          <h3>「没有限制的那些模型」呢？</h3>
+          <p>导入页明确：任意 .gguf 均可导入，<strong>不设模型白名单</strong>。只要文件在手，就能拖进来识别、注册、实测——判断权在你，不在工具。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
     <span class="kicker">界面</span>
     <h2>长什么样</h2>
     <p class="lead">浅色界面，判定依据、门槛账目、筛选过程全部摆在明面上，每一个结论都能追溯。</p>

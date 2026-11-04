@@ -162,6 +162,7 @@ struct PageStack: View {
             case .recommend: RecommendView()
             case .task: TaskView()
             case .installed: InstalledView()
+            case .online: OnlineModelsView()
             case .importGGUF: GGUFView()
             case .bench: BenchView()
             case .chat: ChatView()
@@ -289,6 +290,7 @@ struct Header: View {
         case .recommend: return "上下文 \(s.contextTokens / 1024)K 下的适配判定与速度估算"
         case .task: return "按你的角色与具体任务，在跑得动的模型里挑最合用的"
         case .installed: return "检测本机推理引擎与已下载模型"
+        case .online: return "搜索 HuggingFace 的 GGUF 模型，清单外也能找"
         case .importGGUF: return "任意 .gguf 均可导入，无模型白名单"
         case .bench: return "跳过估算，直接让 Ollama 跑一次"
         case .chat: return "用装好的模型直接对话，可带图片"
@@ -1315,6 +1317,157 @@ struct InstalledView: View {
         case .critical: return T.bad
         case .warning: return T.warn
         case .info: return Color.secondary
+        }
+    }
+}
+
+// MARK: - 在线模型
+
+/// 在应用内搜索 HuggingFace 的 GGUF 模型。与内置目录互补：
+/// 内置 79 条是精心挑选的快照，这里提供清单之外、社区持续更新的模型入口。
+struct OnlineModelsView: View {
+    @EnvironmentObject var s: AppState
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Card {
+                VStack(alignment: .leading, spacing: 8) {
+                    SectionHead(title: "搜索在线 GGUF 模型",
+                                sub: "清单外的模型也能找。HuggingFace + 魔搭双源，结果按下载量排序。")
+                    HStack(spacing: 8) {
+                        TextField("搜模型名，如 qwen / llama / mistral…", text: $s.hfQuery)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit { s.searchHF() }
+                        Button("搜索") { s.searchHF() }
+                            .buttonStyle(.borderedProminent).controlSize(.small)
+                            .disabled(s.hfSearching)
+                        Button("热门 GGUF") { s.hfQuery = ""; s.searchHF() }
+                            .buttonStyle(.bordered).controlSize(.small)
+                        Spacer()
+                    }
+                    // 双源切换
+                    HStack(spacing: 8) {
+                        sourceChip("HuggingFace", 0, s.hfResults.count)
+                        sourceChip("魔搭 ModelScope", 1, s.msResults.count)
+                        Spacer()
+                    }
+                    if s.hfSearching {
+                        HStack(spacing: 7) {
+                            ProgressView().controlSize(.small)
+                            Text("正在搜索 HuggingFace 与魔搭…").font(.system(size: 11.5)).foregroundStyle(.secondary)
+                        }
+                    }
+                    if let err = s.hfError {
+                        Text(err).font(.system(size: 11.5)).foregroundStyle(T.bad)
+                    }
+                    Text("模型来自社区仓库，license 各不相同；下载后到「导入 GGUF」注册即可使用，无模型白名单。")
+                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                }
+            }
+
+            if s.searchSource == 0 {
+                if !s.hfResults.isEmpty {
+                    SectionHead(title: "HuggingFace（\(s.hfResults.count) 个）",
+                                sub: "按下载量排序 · 点「下载」走 huggingface-cli，或「详情」手动下")
+                    ForEach(s.hfResults) { m in HFRow(model: m) }
+                } else if s.hfSearched && !s.hfSearching {
+                    emptyCard()
+                }
+            } else {
+                if !s.msResults.isEmpty {
+                    SectionHead(title: "魔搭（\(s.msResults.count) 个）",
+                                sub: "按下载量排序 · 点「详情」到魔搭页面下载")
+                    ForEach(s.msResults) { m in MSRow(model: m) }
+                } else if s.hfSearched && !s.hfSearching {
+                    emptyCard()
+                }
+            }
+        }
+    }
+
+    func sourceChip(_ label: String, _ idx: Int, _ count: Int) -> some View {
+        Button { s.searchSource = idx } label: {
+            HStack(spacing: 5) {
+                Text(label).font(.system(size: 11.5, weight: s.searchSource == idx ? .semibold : .regular))
+                Text("\(count)").font(.system(size: 10, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 4.5)
+            .background(Capsule().fill(s.searchSource == idx ? T.accent.opacity(0.18) : Color.primary.opacity(0.05)))
+            .foregroundStyle(s.searchSource == idx ? T.accent : Color.primary.opacity(0.75))
+            .overlay(Capsule().strokeBorder(s.searchSource == idx ? T.accent.opacity(0.35) : T.line, lineWidth: 0.6))
+        }
+        .buttonStyle(.plain)
+    }
+
+    func emptyCard() -> some View {
+        Card {
+            Text("没有结果。换个关键词，或点「热门 GGUF」看当前社区最火的模型。")
+                .font(.system(size: 12)).foregroundStyle(.secondary)
+        }
+    }
+}
+
+struct HFRow: View {
+    @EnvironmentObject var s: AppState
+    let model: HFModel
+
+    var body: some View {
+        Card(pad: 11) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(model.modelId)
+                            .font(.system(size: 12.5, weight: .semibold))
+                            .lineLimit(1)
+                        Badge(text: model.license, color: T.accent)
+                        if model.gated {
+                            Badge(text: "需授权", color: T.warn)
+                        }
+                    }
+                    HStack(spacing: 12) {
+                        Label("\(model.downloads) 下载", systemImage: "arrow.down.circle")
+                            .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                        Label("\(model.likes) 赞", systemImage: "heart")
+                            .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer(minLength: 8)
+                Button("下载") { s.downloadHF(model.modelId) }
+                    .buttonStyle(.bordered).controlSize(.small)
+                    .disabled(s.busy != nil)
+                    .help("huggingface-cli download \(model.modelId) --include *.gguf")
+                Button("详情") { s.openHFModel(model.modelId) }
+                    .buttonStyle(.plain).controlSize(.small)
+                    .font(.system(size: 11.5)).foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+struct MSRow: View {
+    @EnvironmentObject var s: AppState
+    let model: MSModel
+
+    var body: some View {
+        Card(pad: 11) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text("\(model.path)/\(model.name)")
+                            .font(.system(size: 12.5, weight: .semibold))
+                            .lineLimit(1)
+                        Badge(text: model.license, color: T.accent)
+                    }
+                    Label("\(model.downloads) 下载", systemImage: "arrow.down.circle")
+                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                Button("详情") {
+                    if let u = model.pageURL { NSWorkspace.shared.open(u) }
+                }
+                .buttonStyle(.bordered).controlSize(.small)
+            }
         }
     }
 }

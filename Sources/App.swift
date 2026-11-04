@@ -44,6 +44,7 @@ final class AppState: ObservableObject {
         case recommend = "模型推荐"
         case task = "任务匹配"
         case installed = "已装与引擎"
+        case online = "在线模型"
         case importGGUF = "导入 GGUF"
         case bench = "实测基准"
         case chat = "对话"
@@ -57,6 +58,7 @@ final class AppState: ObservableObject {
             case .recommend: return "recommend"
             case .task: return "task"
             case .installed: return "installed"
+            case .online: return "online"
             case .importGGUF: return "import"
             case .bench: return "bench"
             case .chat: return "chat"
@@ -70,6 +72,7 @@ final class AppState: ObservableObject {
             case .recommend: return "sparkles"
             case .task: return "target"
             case .installed: return "internaldrive"
+            case .online: return "globe"
             case .importGGUF: return "shippingbox"
             case .bench: return "speedometer"
             case .chat: return "bubble.left.and.bubble.right"
@@ -107,6 +110,16 @@ final class AppState: ObservableObject {
     @Published var imports: [ImportItem] = []
     @Published var dragged = false
     @Published var toast: String?
+
+    // 在线模型搜索（HuggingFace + ModelScope 魔搭 GGUF）
+    @Published var hfQuery = ""
+    @Published var hfResults: [HFModel] = []
+    @Published var msResults: [MSModel] = []
+    @Published var hfSearching = false
+    @Published var hfError: String?
+    @Published var hfSearched = false
+    /// 搜索源：0 = HuggingFace，1 = 魔搭 ModelScope
+    @Published var searchSource = 0
 
     // 模型仓库
     @Published var disk = DiskScan()
@@ -474,6 +487,75 @@ final class AppState: ObservableObject {
         let q = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? name
         if let u = URL(string: "https://huggingface.co/models?search=\(q)%20GGUF") {
             NSWorkspace.shared.open(u)
+        }
+    }
+
+    /// 在应用内搜索 GGUF 模型（HuggingFace + 魔搭双源，不跳浏览器）。
+    func searchHF() {
+        let q = hfQuery
+        hfSearching = true
+        hfError = nil
+        Task {
+            do {
+                async let hf = HFSearch.search(q, limit: 50)
+                async let ms = MSSearch.search(q, limit: 50)
+                let (hfR, msR) = try await (hf, ms)
+                await MainActor.run {
+                    self.hfResults = hfR
+                    self.msResults = msR
+                    self.hfSearching = false
+                    self.hfSearched = true
+                }
+            } catch {
+                await MainActor.run {
+                    self.hfSearching = false
+                    self.hfError = "搜索失败：\(error.localizedDescription)。请检查网络。"
+                }
+            }
+        }
+    }
+
+    /// 打开某个 HF 模型的详情页（浏览器）
+    func openHFModel(_ modelId: String) {
+        if let u = URL(string: "https://huggingface.co/\(modelId)") {
+            NSWorkspace.shared.open(u)
+        }
+    }
+
+    /// 把某个 HF 模型仓库的 .gguf 文件下载到本地（走 huggingface-cli 或直链）。
+    /// 这里用 `huggingface-cli download`（若装了）或引导用户手动下。
+    func downloadHF(_ modelId: String) {
+        let p = Sh.find("huggingface-cli") ?? Sh.find("hf")
+        if let cli = p {
+            busy = "下载 \(modelId)"
+            log = ""
+            DispatchQueue.global(qos: .userInitiated).async {
+                let proc = Process()
+                proc.executableURL = URL(fileURLWithPath: cli)
+                proc.arguments = ["download", modelId, "--include", "*.gguf"]
+                let pipe = Pipe()
+                proc.standardOutput = pipe
+                proc.standardError = pipe
+                pipe.fileHandleForReading.readabilityHandler = { h in
+                    let d = h.availableData
+                    if !d.isEmpty, let s = String(data: d, encoding: .utf8) {
+                        DispatchQueue.main.async { self.log += s }
+                    }
+                }
+                try? proc.run()
+                proc.waitUntilExit()
+                pipe.fileHandleForReading.readabilityHandler = nil
+                DispatchQueue.main.async {
+                    self.busy = nil
+                    let ok = proc.terminationStatus == 0
+                    self.log += ok ? "\n[完成] 已下载 \(modelId)\n" : "\n[失败] 退出码 \(proc.terminationStatus)\n"
+                    if ok { self.toast = "已下载 \(modelId)，可到「导入 GGUF」注册" }
+                }
+            }
+        } else {
+            // 未装 huggingface-cli，引导安装或去网页下
+            openHFModel(modelId)
+            toast = "未检测到 huggingface-cli。已打开网页，可在 Files 里下 GGUF 后用「导入 GGUF」注册（或 pip install -U huggingface_hub）"
         }
     }
 
