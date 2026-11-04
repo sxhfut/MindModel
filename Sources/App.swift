@@ -103,6 +103,7 @@ final class AppState: ObservableObject {
     @Published var lctxRunning = false
     @Published var lctxResult: String?      // 测试结论文字
     @Published var lctxDetail: String?      // 详细（上下文长度、是否答对、token 数）
+    @Published var lctxTokens = 32768       // 测试上下文档位，默认 32K
 
     // 模型拉取进度（ollama pull 实时解析）
     /// 正在拉取的模型 tag；nil 表示当前没有进行中的拉取

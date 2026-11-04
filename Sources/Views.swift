@@ -2357,7 +2357,7 @@ struct BenchView: View {
             Card {
                 VStack(alignment: .leading, spacing: 8) {
                     SectionHead(title: "长上下文稳定性测试",
-                                sub: "喂一段 32K token 的文本，看模型能否提取藏在末尾的答案——测的是「部署即变笨」")
+                                sub: "把答案藏在长文本末尾，看模型能否提取——测的是「部署即变笨」")
                     HStack(spacing: 8) {
                         Picker("", selection: $s.pickedModel) {
                             Text("选择模型").tag("")
@@ -2365,10 +2365,17 @@ struct BenchView: View {
                                 Text(m.name).tag(m.name)
                             }
                         }
-                        .labelsHidden().frame(width: 240).controlSize(.small)
+                        .labelsHidden().frame(width: 220).controlSize(.small)
 
-                        Button(s.lctxRunning ? "测试中…" : "跑长上下文测试") {
-                            if !s.pickedModel.isEmpty { s.runLongContextTest(model: s.pickedModel) }
+                        Picker("", selection: $s.lctxTokens) {
+                            Text("8K 上下文").tag(8192)
+                            Text("32K 上下文").tag(32768)
+                            Text("64K 上下文").tag(65536)
+                        }
+                        .labelsHidden().frame(width: 120).controlSize(.small)
+
+                        Button(s.lctxRunning ? "测试中…" : "跑测试") {
+                            if !s.pickedModel.isEmpty { s.runLongContextTest(model: s.pickedModel, targetTokens: s.lctxTokens) }
                         }
                         .buttonStyle(.borderedProminent).controlSize(.small)
                         .disabled(s.pickedModel.isEmpty || s.lctxRunning)
@@ -2381,8 +2388,19 @@ struct BenchView: View {
                     if let d = s.lctxDetail {
                         Text(d).font(.system(size: 11)).foregroundStyle(.secondary)
                     }
-                    Text("短对话看不出问题，超过 32K 后 KV 缓存精度和注意力误差会累积，导致模型答非所问、工具调用失败。这个测试用「大海捞针」法：把答案藏在长文本末尾，答对说明长上下文还稳定。")
+                    Text("短对话看不出问题，上下文变长后注意力误差会累积，导致答非所问、工具调用失败。用「大海捞针」法：答案藏在长文本末尾，答对说明该档上下文还稳定。不同模型的原生长度不同，超了会先失败。")
                         .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            // KV 缓存精度提示（针对 Apple Metal + Ollama 的准确说明）
+            Card {
+                VStack(alignment: .leading, spacing: 6) {
+                    SectionHead(title: "KV 缓存精度",
+                                sub: "本机 Ollama 默认 FP16，无需担心量化导致的精度损失")
+                    Text("Ollama 在 Apple Silicon 上默认用 FP16 的 KV 缓存，不会自动量化。除非你手动设置了 OLLAMA_KV_CACHE_TYPE=q4_0（那种 4-bit 量化才会在长上下文里造成明显精度损失），否则长上下文「变笨」更可能来自模型本身的原生长度上限，而不是 KV 精度。")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
