@@ -1368,7 +1368,7 @@ struct OnlineModelsView: View {
             if s.searchSource == 1 {
                 if !s.msResults.isEmpty {
                     SectionHead(title: "魔搭（\(s.msResults.count) 个）",
-                                sub: "按下载量排序 · 点「详情」到魔搭页面下载")
+                                sub: "按下载量排序 · 点「下载」直接下到本地，无需跳转")
                     ForEach(s.msResults) { m in MSRow(model: m) }
                 } else if s.hfSearched && !s.hfSearching {
                     emptyCard()
@@ -1382,6 +1382,9 @@ struct OnlineModelsView: View {
                     emptyCard()
                 }
             }
+        }
+        .sheet(item: $s.msListing) { listing in
+            MSFilesSheet(org: listing.org, name: listing.name, model: listing.model)
         }
     }
 
@@ -1463,12 +1466,96 @@ struct MSRow: View {
                         .font(.system(size: 10.5)).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)
+                Button("下载") { s.listMSFiles(model) }
+                    .buttonStyle(.borderedProminent).controlSize(.small)
                 Button("详情") {
                     if let u = model.pageURL { NSWorkspace.shared.open(u) }
                 }
                 .buttonStyle(.bordered).controlSize(.small)
             }
         }
+    }
+}
+
+/// 魔搭仓库文件列表弹层：列出 .gguf 文件，点选后应用内直下。
+struct MSFilesSheet: View {
+    @EnvironmentObject var s: AppState
+    @Environment(\.dismiss) var dismiss
+    let org: String
+    let name: String
+    let model: MSModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("选择要下载的 .gguf").font(.system(size: 15, weight: .semibold))
+                    Text("\(org)/\(name)").font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("关闭") { dismiss() }.buttonStyle(.bordered).controlSize(.small)
+            }
+
+            if s.msFilesLoading {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("正在读取文件列表…").font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 120)
+            } else if s.msFiles.isEmpty {
+                Text("该仓库没有 .gguf 文件（可能是 safetensors 原始权重，需自行转换）。")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 120)
+            } else {
+                ScrollView {
+                    VStack(spacing: 8) {
+                        ForEach(s.msFiles) { f in
+                            fileRow(f)
+                        }
+                    }
+                }
+            }
+
+            // 下载进度
+            if let d = s.msDownloading {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(d.path).font(.system(size: 11, weight: .medium)).lineLimit(1)
+                    ProgressView(value: d.total > 0 ? Double(d.received) / Double(d.total) : 0)
+                    Text(d.total > 0
+                         ? "\(fmt(d.received)) / \(fmt(d.total))"
+                         : "已下载 \(fmt(d.received))")
+                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                }
+                .padding(.top, 4)
+            }
+        }
+        .padding(18)
+        .frame(width: 520, height: 420)
+    }
+
+    func fileRow(_ f: MSFile) -> some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(f.path).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                Text(f.sizeGB).font(.system(size: 10.5)).foregroundStyle(.secondary)
+            }
+            Spacer()
+            let isThis = s.msDownloading?.path == f.path
+            if isThis {
+                ProgressView().controlSize(.small)
+            } else {
+                Button("下载") { s.downloadMSFile(f) }
+                    .buttonStyle(.bordered).controlSize(.small)
+            }
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+    }
+
+    func fmt(_ b: Int64) -> String {
+        if b >= 1_073_741_824 { return String(format: "%.2f GB", Double(b) / 1_073_741_824.0) }
+        if b >= 1_048_576 { return String(format: "%.1f MB", Double(b) / 1_048_576.0) }
+        return "\(b) B"
     }
 }
 

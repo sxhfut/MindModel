@@ -121,6 +121,16 @@ final class AppState: ObservableObject {
     /// 搜索源：0 = HuggingFace，1 = 魔搭 ModelScope（国内默认）
     @Published var searchSource = 1
 
+    // 魔搭应用内直下
+    /// 当前正在浏览文件的仓库（org/name），非空时展示文件列表弹层
+    @Published var msListing: MSListing?
+    /// 仓库文件列表（.gguf / .mmproj）
+    @Published var msFiles: [MSFile] = []
+    @Published var msFilesLoading = false
+    /// 正在下载的文件（含进度：已下载/总字节）
+    @Published var msDownloading: (path: String, received: Int64, total: Int64)?
+    @Published var msDownloaded: URL?
+
     // 模型仓库
     @Published var disk = DiskScan()
     @Published var issues: [HealthIssue] = []
@@ -562,6 +572,68 @@ final class AppState: ObservableObject {
             // 未装 huggingface-cli，引导安装或去网页下
             openHFModel(modelId)
             toast = "未检测到 huggingface-cli。已打开网页，可在 Files 里下 GGUF 后用「导入 GGUF」注册（或 pip install -U huggingface_hub）"
+        }
+    }
+
+    // MARK: - 魔搭应用内直下
+
+    /// 打开某个魔搭仓库的文件列表弹层（点「下载」时调用）。
+    func listMSFiles(_ model: MSModel) {
+        msListing = MSListing(org: model.path, name: model.name, model: model)
+        msFiles = []
+        msFilesLoading = true
+        Task {
+            do {
+                let files = try await MSDownload.listFiles(org: model.path, name: model.name)
+                await MainActor.run {
+                    self.msFiles = files
+                    self.msFilesLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.msFilesLoading = false
+                    self.toast = "读取文件列表失败：\(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    /// 下载目录：~/Downloads/MindModel（不存在则建）。
+    static func downloadDir() -> URL {
+        let dl = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        let dir = dl.appendingPathComponent("MindModel", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    /// 应用内直下魔搭的某个 .gguf 文件，完成后自动解析并加入导入列表。
+    func downloadMSFile(_ file: MSFile) {
+        guard let listing = msListing else { return }
+        let dir = Self.downloadDir()
+        msDownloading = (path: file.path, received: 0, total: file.size)
+        Task {
+            do {
+                let saved = try await MSDownload.download(
+                    org: listing.org, name: listing.name, filePath: file.path, to: dir
+                ) { recv, total in
+                    Task { @MainActor in
+                        self.msDownloading = (path: file.path, received: recv, total: total)
+                    }
+                }
+                await MainActor.run {
+                    self.msDownloading = nil
+                    self.msDownloaded = saved
+                    self.toast = "已下载 \(file.path)，正在解析…"
+                    // 直接走导入解析，把下载的 gguf 识别出来
+                    self.loadGGUF(paths: [saved.path])
+                }
+            } catch {
+                await MainActor.run {
+                    self.msDownloading = nil
+                    self.toast = "下载失败：\(error.localizedDescription)"
+                }
+            }
         }
     }
 
