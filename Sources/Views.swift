@@ -2117,7 +2117,9 @@ struct AgentView: View {
     private var confirmBinding: Binding<Bool> {
         Binding(
             get: { s.agentPendingConfirm != nil },
-            set: { if !$0 { s.resolveConfirm(false) } }
+            // set 只在 alert 被程序化关闭时触发；用户点按钮已通过 resolveConfirm 处理，
+            // 这里不做任何覆盖，避免把"允许"误重置为"拒绝"。
+            set: { _ in }
         )
     }
 

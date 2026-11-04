@@ -162,7 +162,8 @@ final class AppState: ObservableObject {
     @Published var agentAllowWrite = false
     /// 需要用户确认的待执行工具（写文件/命令）
     @Published var agentPendingConfirm: ToolCall?
-    @Published var agentConfirmChoice = false
+    /// 用户对确认框的选择。三态：nil=未响应，true=允许，false=拒绝。
+    @Published var agentConfirmChoice: Bool? = nil
     private var agentTask: Task<Void, Never>?
 
     let ctxOptions = [4096, 8192, 16384, 32768, 65536, 131072]
@@ -371,16 +372,17 @@ final class AppState: ObservableObject {
                 let chunk = rest + s
                 rest = ""
                 // 用 \r 或 \n 作为段边界；覆盖动画里只有最后一个 \r 之后才是"当前"进度
-                let segs = chunk.components(separatedBy: CharacterSet(charactersIn: "\r\n"))
-                // 若 chunk 不是以 \r/\n 结尾，最后一段不完整，留下次拼
+                var segs = chunk.components(separatedBy: CharacterSet(charactersIn: "\r\n"))
+                // 若 chunk 不是以 \r/\n 结尾，最后一段不完整，留下次拼，且不参与本次解析
                 if !chunk.hasSuffix("\r") && !chunk.hasSuffix("\n") {
-                    if let last = segs.last, !last.isEmpty { rest = last }
+                    if let last = segs.last, !last.isEmpty {
+                        rest = last
+                        segs.removeLast()
+                    }
                 }
                 for seg in segs {
                     let line = seg.trimmingCharacters(in: .whitespaces)
                     guard !line.isEmpty else { continue }
-                    // 只有"最新"的进度才有意义；但日志要留全。这里只解析最新一条，
-                    // 靠 \r 覆盖的性质，同一 chunk 里最后一条就是当前进度。
                     DispatchQueue.main.async { self.consumePullLine(line) }
                 }
             }
@@ -610,6 +612,11 @@ final class AppState: ObservableObject {
     /// 应用内直下魔搭的某个 .gguf 文件，完成后自动解析并加入导入列表。
     func downloadMSFile(_ file: MSFile) {
         guard let listing = msListing else { return }
+        // 下载中不并发：已有下载进行时，忽略新的点击（避免进度互相覆盖）
+        if msDownloading != nil {
+            toast = "已有文件在下载，请稍候"
+            return
+        }
         let dir = Self.downloadDir()
         msDownloading = (path: file.path, received: 0, total: file.size)
         Task {
@@ -1076,9 +1083,14 @@ final class AppState: ObservableObject {
         chatError = nil
 
         var msgs: [[String: Any]] = []
+        // 历史消息剥离图片：Ollama 视觉模型只处理最新一条带图 user 消息，
+        // 历史图片重发只浪费带宽与上下文。只给最后一条 user 消息带 images。
+        let lastUserWithImage = chat.dropLast().lastIndex { $0.role == "user" && !$0.images.isEmpty }
         for m in chat.dropLast() {
             var one: [String: Any] = ["role": m.role, "content": m.text]
-            if !m.images.isEmpty { one["images"] = m.images }
+            if let li = lastUserWithImage, chat.dropLast()[li].id == m.id {
+                one["images"] = m.images
+            }
             msgs.append(one)
         }
         let model = chatModel
@@ -1301,21 +1313,25 @@ final class AppState: ObservableObject {
     }
 
     /// 弹确认框，等用户决定是否允许写文件/执行命令。返回是否批准。
+    /// 用 agentConfirmChoice（三态）判断"用户是否已响应"，避免允许/拒绝都卡死。
     @MainActor
     private func confirmTool(_ call: ToolCall) async -> Bool {
         agentPendingConfirm = call
-        agentConfirmChoice = false
-        // 等待用户在 UI 上点允许/拒绝
-        while agentPendingConfirm != nil && !agentConfirmChoice {
+        agentConfirmChoice = nil
+        // 等待用户点允许/拒绝；同时响应任务取消，避免 stopAgent 停不下来
+        while agentPendingConfirm != nil && agentConfirmChoice == nil {
+            if Task.isCancelled { break }
             try? await Task.sleep(nanoseconds: 50_000_000)
         }
-        let approved = agentConfirmChoice
+        let approved = agentConfirmChoice ?? false
         agentPendingConfirm = nil
+        agentConfirmChoice = nil
         return approved
     }
 
     func resolveConfirm(_ allow: Bool) {
         agentConfirmChoice = allow
+        agentPendingConfirm = nil
     }
 
     func stopAgent() {

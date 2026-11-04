@@ -44,7 +44,9 @@ enum MSDownload {
 
     /// 列出仓库文件（过滤出 .gguf / .mmproj，按大小降序）。
     static func listFiles(org: String, name: String) async throws -> [MSFile] {
-        let urlStr = "\(host)/\(org)/\(name)/repo/files?Revision=master&Recursive=true"
+        let orgEnc = org.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? org
+        let nameEnc = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? name
+        let urlStr = "\(host)/\(orgEnc)/\(nameEnc)/repo/files?Revision=master&Recursive=true"
         guard let url = URL(string: urlStr) else {
             throw NSError(domain: "MS", code: -1, userInfo: [NSLocalizedDescriptionKey: "仓库地址无效"])
         }
@@ -73,8 +75,13 @@ enum MSDownload {
     static func download(org: String, name: String, filePath: String,
                          to dir: URL,
                          onProgress: @escaping (Int64, Int64) -> Void) async throws -> URL {
-        let enc = filePath.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? filePath
-        let urlStr = "\(host)/\(org)/\(name)/repo?Revision=master&FilePath=\(enc)"
+        // FilePath 是 query 参数，用 urlQueryAllowed 转义（含 / 等字符），避免路径被截断
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "/+&=")
+        let enc = filePath.addingPercentEncoding(withAllowedCharacters: allowed) ?? filePath
+        let orgEnc = org.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? org
+        let nameEnc = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? name
+        let urlStr = "\(host)/\(orgEnc)/\(nameEnc)/repo?Revision=master&FilePath=\(enc)"
         guard let url = URL(string: urlStr) else {
             throw NSError(domain: "MS", code: -1, userInfo: [NSLocalizedDescriptionKey: "下载地址无效"])
         }
@@ -98,31 +105,34 @@ enum MSDownload {
         let session = URLSession(configuration: .default, delegate: streamer, delegateQueue: nil)
         defer { session.invalidateAndCancel() }
 
-        let (_, resp) = try await session.data(for: req)
-        let http = resp as? HTTPURLResponse
-        let code = http?.statusCode ?? -1
-        guard code == 200 || code == 206 else {
-            throw NSError(domain: "MS", code: code,
-                          userInfo: [NSLocalizedDescriptionKey: "下载失败（HTTP \(code)）"])
+        // 用 dataTask（delegate 流式写盘），而非 data(for:)（会把整个响应累积进内存导致大文件 OOM）
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            streamer.onComplete = {
+                cont.resume()
+            }
+            session.dataTask(with: req).resume()
         }
+
         if let e = streamer.error { throw e }
         return dest
     }
 }
 
-/// 流式下载：DataDelegate 逐块写盘，回报进度。
+/// 流式下载：DataDelegate 逐块写盘，回报进度。不把整个文件留在内存。
 private final class StreamDownloader: NSObject, URLSessionDataDelegate {
     let dest: URL
-    let resumeAt: Int64
+    var resumeAt: Int64
     let onProgress: (Int64, Int64) -> Void
     var received: Int64 = 0
     var total: Int64 = 0
     var error: Error?
+    var onComplete: (() -> Void)?
     private var fh: FileHandle?
 
     init(dest: URL, resumeAt: Int64, onProgress: @escaping (Int64, Int64) -> Void) {
         self.dest = dest
         self.resumeAt = resumeAt
+        self.received = resumeAt   // 断点续传时进度从已有字节起算
         self.onProgress = onProgress
         super.init()
     }
@@ -134,7 +144,12 @@ private final class StreamDownloader: NSObject, URLSessionDataDelegate {
                let last = r.split(separator: "/").last, let t = Int64(last) {
                 total = t
             } else if let l = http.value(forHTTPHeaderField: "Content-Length"), let t = Int64(l) {
-                total = resumeAt + t
+                total = t
+            }
+            // 服务器忽略 Range 返回 200（完整文件）时，从头写，不回退到 resumeAt
+            if http.statusCode == 200 {
+                resumeAt = 0
+                received = 0
             }
         }
         do {
@@ -142,7 +157,11 @@ private final class StreamDownloader: NSObject, URLSessionDataDelegate {
                 FileManager.default.createFile(atPath: dest.path, contents: nil)
             }
             fh = try FileHandle(forWritingTo: dest)
-            try fh?.seek(toOffset: UInt64(resumeAt))
+            if resumeAt == 0 {
+                try fh?.truncate(atOffset: 0)
+            } else {
+                try fh?.seek(toOffset: UInt64(resumeAt))
+            }
         } catch {
             self.error = error
         }
@@ -159,5 +178,6 @@ private final class StreamDownloader: NSObject, URLSessionDataDelegate {
         try? fh?.close()
         fh = nil
         if let err { self.error = err }
+        onComplete?()
     }
 }

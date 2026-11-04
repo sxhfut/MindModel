@@ -12,7 +12,7 @@ struct HFModel: Identifiable, Codable {
     let likes: Int
     let tags: [String]
     let createdAt: String
-    let gated: Bool              // 是否需登录授权才能下载
+    let gated: Bool              // 是否需登录授权才能下载（来自 HF 的 private 字段）
 
     var license: String {
         tags.first { $0.hasPrefix("license:") }
@@ -29,7 +29,19 @@ struct HFModel: Identifiable, Codable {
     var treeURL: URL? { URL(string: "https://hf-mirror.com/api/models/\(modelId)/tree/main") }
 
     enum CodingKeys: String, CodingKey {
-        case modelId, downloads, likes, tags, createdAt, gated
+        case modelId, downloads, likes, tags, createdAt
+        case gated = "private"   // HF API 里"是否需授权"字段叫 private，不是 gated
+    }
+
+    /// gated 字段可能缺失（HF 对公开仓库常不返回 private 字段），默认 false。
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        modelId = try c.decode(String.self, forKey: .modelId)
+        downloads = try c.decodeIfPresent(Int.self, forKey: .downloads) ?? 0
+        likes = try c.decodeIfPresent(Int.self, forKey: .likes) ?? 0
+        tags = try c.decodeIfPresent([String].self, forKey: .tags) ?? []
+        createdAt = try c.decodeIfPresent(String.self, forKey: .createdAt) ?? ""
+        gated = try c.decodeIfPresent(Bool.self, forKey: .gated) ?? false
     }
 }
 
