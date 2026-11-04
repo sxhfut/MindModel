@@ -1779,7 +1779,7 @@ struct AgentView: View {
                         .labelsHidden().frame(width: 240).controlSize(.small)
 
                         Text("工作目录").font(.system(size: 11)).foregroundStyle(.secondary)
-                        Text(s.agentCwd)
+                        Text(s.snapshot ? "~" : s.agentCwd)
                             .font(.system(size: 10.5, design: .monospaced))
                             .foregroundStyle(.secondary)
                             .lineLimit(1).truncationMode(.middle)
