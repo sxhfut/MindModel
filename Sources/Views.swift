@@ -29,7 +29,7 @@ struct Badge: View {
     var color: Color = T.accent
     var body: some View {
         Text(text)
-            .font(.system(size: 11, weight: .semibold))
+            .font(.system(size: 12, weight: .semibold))
             .padding(.horizontal, 7).padding(.vertical, 2.5)
             .background(color.opacity(0.16))
             .foregroundStyle(color)
@@ -56,10 +56,10 @@ struct MetricCard: View {
     var body: some View {
         Card {
             VStack(alignment: .leading, spacing: 6) {
-                Text(title).font(.system(size: 11.5, weight: .medium)).foregroundStyle(.secondary)
+                Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
                 Text(value).font(.system(size: 22, weight: .semibold, design: .rounded)).foregroundStyle(tint)
                 if !sub.isEmpty {
-                    Text(sub).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2)
+                    Text(sub).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(2)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -72,9 +72,9 @@ struct KeyRow: View {
     let v: String
     var body: some View {
         HStack(alignment: .top) {
-            Text(k).font(.system(size: 12.5)).foregroundStyle(.secondary)
+            Text(k).font(.system(size: 14)).foregroundStyle(.secondary)
                 .frame(width: 150, alignment: .leading)
-            Text(v).font(.system(size: 12.5, weight: .medium)).foregroundStyle(.primary)
+            Text(v).font(.system(size: 14, weight: .medium)).foregroundStyle(.primary)
                 .textSelection(.enabled)
             Spacer(minLength: 0)
         }
@@ -93,8 +93,8 @@ struct Bullet: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(head).font(.system(size: 11.5, weight: .semibold))
-            Text(detail).font(.system(size: 11)).foregroundStyle(.secondary)
+            Text(head).font(.system(size: 13, weight: .semibold))
+            Text(detail).font(.system(size: 12)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -112,8 +112,8 @@ struct SearchBox: View {
         Group {
             if s.snapshot {
                 HStack(spacing: 5) {
-                    Image(systemName: "magnifyingglass").font(.system(size: 10))
-                    Text(text.isEmpty ? placeholder : text).font(.system(size: 11))
+                    Image(systemName: "magnifyingglass").font(.system(size: 11))
+                    Text(text.isEmpty ? placeholder : text).font(.system(size: 12))
                     Spacer(minLength: 0)
                 }
                 .foregroundStyle(.secondary)
@@ -139,7 +139,7 @@ struct SectionHead: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title).font(.system(size: 15, weight: .semibold))
             if !sub.isEmpty {
-                Text(sub).font(.system(size: 11.5)).foregroundStyle(.secondary)
+                Text(sub).font(.system(size: 13)).foregroundStyle(.secondary)
             }
         }
     }
@@ -194,7 +194,7 @@ struct RootView: View {
         .overlay(alignment: .bottom) {
             if let t = s.toast {
                 Text(t)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .padding(.horizontal, 14).padding(.vertical, 8)
                     .background(.regularMaterial, in: Capsule())
                     .overlay(Capsule().strokeBorder(T.line))
@@ -217,7 +217,7 @@ struct Rail: View {
         VStack(alignment: .leading, spacing: 2) {
             VStack(alignment: .leading, spacing: 1) {
                 Text("MindModel").font(.system(size: 15, weight: .bold, design: .rounded))
-                Text("本机模型顾问").font(.system(size: 10.5)).foregroundStyle(.secondary)
+                Text("本机模型顾问").font(.system(size: 12)).foregroundStyle(.secondary)
             }
             .padding(.horizontal, 14)
             .padding(.top, 22)
@@ -229,9 +229,9 @@ struct Rail: View {
                 } label: {
                     HStack(spacing: 9) {
                         Image(systemName: t.icon)
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.system(size: 13, weight: .medium))
                             .frame(width: 15)
-                        Text(t.rawValue).font(.system(size: 12.5, weight: s.tab == t ? .semibold : .regular))
+                        Text(t.rawValue).font(.system(size: 14, weight: s.tab == t ? .semibold : .regular))
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 11).padding(.vertical, 7)
@@ -247,11 +247,11 @@ struct Rail: View {
             Spacer(minLength: 8)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(s.hw.chip).font(.system(size: 10.5, weight: .semibold))
+                Text(s.hw.chip).font(.system(size: 12, weight: .semibold))
                 Text("\(String(format: "%.0f", s.hw.ramGB)) GB 统一内存 · \(s.hw.gpuCores) GPU 核")
-                    .font(.system(size: 10)).foregroundStyle(.secondary)
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
                 Text("可用预算 \(String(format: "%.0f", s.budgetGB)) GB")
-                    .font(.system(size: 10)).foregroundStyle(T.accent)
+                    .font(.system(size: 11)).foregroundStyle(T.accent)
             }
             .padding(.horizontal, 14)
             .padding(.bottom, 16)
@@ -268,7 +268,7 @@ struct Header: View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(s.tab.rawValue).font(.system(size: 24, weight: .bold, design: .rounded))
-                Text(subtitle).font(.system(size: 12)).foregroundStyle(.secondary)
+                Text(subtitle).font(.system(size: 13)).foregroundStyle(.secondary)
             }
             Spacer()
             if s.pullTag != nil {
@@ -276,7 +276,7 @@ struct Header: View {
             } else if let b = s.busy {
                 HStack(spacing: 7) {
                     ProgressView().controlSize(.small)
-                    Text(b).font(.system(size: 11.5)).foregroundStyle(.secondary)
+                    Text(b).font(.system(size: 13)).foregroundStyle(.secondary)
                 }
             }
         }
@@ -313,22 +313,22 @@ struct PullProgressBar: View {
                     if s.pullVerifying {
                         ProgressView().controlSize(.mini)
                         Text("校验已下载层…（断点续传）")
-                            .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
                     } else if let layer = s.pullLayer {
                         Text(layer.hash.prefix(8))
-                            .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+                            .font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
                         if !layer.done.isEmpty {
                             Text("\(layer.done)/\(layer.total)")
-                                .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                                .font(.system(size: 12)).foregroundStyle(.secondary)
                         }
                         if !layer.speed.isEmpty {
-                            Text(layer.speed).font(.system(size: 10.5)).foregroundStyle(.secondary)
+                            Text(layer.speed).font(.system(size: 12)).foregroundStyle(.secondary)
                         }
                         if !layer.eta.isEmpty {
-                            Text("剩 \(layer.eta)").font(.system(size: 10.5)).foregroundStyle(.secondary)
+                            Text("剩 \(layer.eta)").font(.system(size: 12)).foregroundStyle(.secondary)
                         }
                     } else {
-                        Text(s.busy ?? "拉取中…").font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text(s.busy ?? "拉取中…").font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                 }
                 GeometryReader { geo in
@@ -370,7 +370,7 @@ struct PullButton: View {
             } label: {
                 HStack(spacing: 4) {
                     ProgressView().controlSize(.mini)
-                    Text("拉取中").font(.system(size: 11.5))
+                    Text("拉取中").font(.system(size: 13))
                 }
             }
             .buttonStyle(.bordered).controlSize(.small)
@@ -418,7 +418,7 @@ struct ImageBackendButton: View {
                 }
             } label: {
                 Text("需图后端")
-                    .font(.system(size: 11.5))
+                    .font(.system(size: 13))
                     .foregroundStyle(T.warn)
             }
             .menuStyle(.borderlessButton)
@@ -470,7 +470,7 @@ struct OverviewView: View {
                             if let first = s.issues.first {
                                 HStack(spacing: 6) {
                                     Circle().fill(sevColor(first.severity)).frame(width: 6, height: 6)
-                                    Text(first.title).font(.system(size: 11))
+                                    Text(first.title).font(.system(size: 12))
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
                                     Spacer()
@@ -479,7 +479,7 @@ struct OverviewView: View {
                                 Text(s.installed.isEmpty
                                      ? "还没有装模型。到「模型推荐」点拉取，或到「导入 GGUF」加载本地文件。"
                                      : "每个模型的数据层都能对上，没有无主数据块。")
-                                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                                    .font(.system(size: 12)).foregroundStyle(.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                             HStack(spacing: 8) {
@@ -506,7 +506,7 @@ struct OverviewView: View {
                         s.exportReport()
                     } label: {
                         Label("导出体检报告（markdown）", systemImage: "square.and.arrow.up")
-                            .font(.system(size: 11.5))
+                            .font(.system(size: 13))
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
@@ -526,7 +526,7 @@ struct OverviewView: View {
 
     func stat(_ k: String, _ v: String) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(k).font(.system(size: 10.5)).foregroundStyle(.secondary)
+            Text(k).font(.system(size: 12)).foregroundStyle(.secondary)
             Text(v).font(.system(size: 15, weight: .semibold, design: .rounded))
         }
     }
@@ -541,8 +541,8 @@ struct OverviewView: View {
 
     func bullet(_ h: String, _ d: String) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(h).font(.system(size: 11.5, weight: .semibold))
-            Text(d).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text(h).font(.system(size: 13, weight: .semibold))
+            Text(d).font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 }
@@ -592,7 +592,7 @@ struct HardwareView: View {
                                 .disabled(s.measuring)
                         }
                         Text("这是 CPU 侧可达带宽，通常低于厂商标称峰值；LLM decode 在 Metal 下约能吃掉其中的 60–75%。本工具用它乘 0.45 作为保守系数估算 tok/s。")
-                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -600,7 +600,7 @@ struct HardwareView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         SectionHead(title: "怎么读这些数", sub: "")
                         Text("• 能装多大：权重 + KV cache + 1.6 GB 运行时 ≦ 预算\n• 跑多快：dense 模型基本与体积成反比；MoE 只看激活参数\n• 上下文越长，KV 吃掉的预算越多：64K 会让 30B 多花 3–8 GB")
-                            .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                            .font(.system(size: 13)).foregroundStyle(.secondary)
                             .lineSpacing(3)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -646,14 +646,14 @@ struct RecommendView: View {
                                     .buttonStyle(.bordered).controlSize(.small)
                             }
                         }
-                        Text(pair.1).font(.system(size: 11.5)).foregroundStyle(.secondary)
+                        Text(pair.1).font(.system(size: 13)).foregroundStyle(.secondary)
                         let alts = altLine(s.purpose)
                         if !alts.isEmpty {
-                            Text(alts).font(.system(size: 11)).foregroundStyle(.secondary)
+                            Text(alts).font(.system(size: 12)).foregroundStyle(.secondary)
                         }
                     } else {
                         Text("该用途下没有能在 \(String(format: "%.0f", s.budgetGB)) GB 预算内跑起来的模型，建议放宽上下文或降低量化。")
-                            .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                            .font(.system(size: 13)).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -664,7 +664,10 @@ struct RecommendView: View {
                     filterChip(c.rawValue, s.category == c) { s.category = c }
                 }
                 Spacer()
-                Text("上下文").font(.system(size: 11.5)).foregroundStyle(.secondary)
+                filterChip("长上下文✓ \(s.lctxRecords.values.filter(\.passed).count)", s.lctxOnly) {
+                    s.lctxOnly.toggle()
+                }
+                Text("上下文").font(.system(size: 13)).foregroundStyle(.secondary)
                 Picker("", selection: $s.contextTokens) {
                     ForEach(s.ctxOptions, id: \.self) { v in
                         Text("\(v / 1024)K").tag(v)
@@ -677,9 +680,9 @@ struct RecommendView: View {
 
             HStack(spacing: 6) {
                 Text("需求 = 权重 + KV + 1.6 GB 运行时；判定阈值基于 \(String(format: "%.0f", s.budgetGB)) GB 预算")
-                    .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
                 Spacer()
-                Text("\(ranked.count) 个候选").font(.system(size: 10.5)).foregroundStyle(.secondary)
+                Text("\(ranked.count) 个候选").font(.system(size: 12)).foregroundStyle(.secondary)
             }
 
             // 档位分布：一眼看出这台机器是在"随便挑"还是"只能挑几个"
@@ -688,12 +691,26 @@ struct RecommendView: View {
                     let n = ranked.filter { $0.level == l }.count
                     HStack(spacing: 5) {
                         Circle().fill(fitColor(l)).frame(width: 6, height: 6)
-                        Text(l.label).font(.system(size: 10.5)).foregroundStyle(.secondary)
-                        Text("\(n)").font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                        Text(l.label).font(.system(size: 12)).foregroundStyle(.secondary)
+                        Text("\(n)").font(.system(size: 12, weight: .semibold, design: .rounded))
                             .foregroundStyle(n == 0 ? Color.secondary : .primary)
                     }
                 }
                 Spacer()
+            }
+
+            if s.lctxOnly && ranked.isEmpty {
+                HStack(spacing: 8) {
+                    Image(systemName: "info.circle").foregroundStyle(T.warn)
+                    Text(s.lctxRecords.isEmpty
+                         ? "还没有跑过长上下文测试，先去「实测」页对心仪模型跑一次「长上下文稳定性测试」，再回来筛选。"
+                         : "已测模型里暂无在当前分类 + 预算下能跑起来、又通过长上下文测试的；可放宽上下文或换一类再看。")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(T.warn.opacity(0.08)))
             }
 
             if s.category == nil {
@@ -701,8 +718,8 @@ struct RecommendView: View {
                     let rows = ranked.filter { $0.model.cat == c }
                     if !rows.isEmpty {
                         HStack(spacing: 8) {
-                            Text(c.rawValue).font(.system(size: 12, weight: .semibold))
-                            Text("\(rows.count)").font(.system(size: 10.5, design: .rounded))
+                            Text(c.rawValue).font(.system(size: 13, weight: .semibold))
+                            Text("\(rows.count)").font(.system(size: 12, design: .rounded))
                                 .foregroundStyle(.secondary)
                             Rectangle().fill(T.line).frame(height: 0.7)
                         }
@@ -730,7 +747,7 @@ struct RecommendView: View {
 
     func filterChip(_ t: String, _ on: Bool, _ act: @escaping () -> Void) -> some View {
         Button(action: act) {
-            Text(t).font(.system(size: 11.5, weight: on ? .semibold : .regular))
+            Text(t).font(.system(size: 13, weight: on ? .semibold : .regular))
                 .padding(.horizontal, 10).padding(.vertical, 4.5)
                 .background(Capsule().fill(on ? T.accent.opacity(0.18) : Color.primary.opacity(0.05)))
                 .foregroundStyle(on ? T.accent : Color.primary.opacity(0.75))
@@ -751,9 +768,9 @@ struct ModelRow: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
-                        Text(a.model.name).font(.system(size: 12.5, weight: .semibold))
+                        Text(a.model.name).font(.system(size: 14, weight: .semibold))
                         if a.model.activeB < a.model.paramsB {
-                            Text("MoE").font(.system(size: 9, weight: .bold))
+                            Text("MoE").font(.system(size: 10, weight: .bold))
                                 .padding(.horizontal, 4).padding(.vertical, 1)
                                 .background(T.accent.opacity(0.15)).foregroundStyle(T.accent)
                                 .clipShape(RoundedRectangle(cornerRadius: 3))
@@ -765,9 +782,12 @@ struct ModelRow: View {
                         if !a.model.cat.chattable {
                             Badge(text: a.model.cat.rawValue, color: T.accent)
                         }
+                        if let r = s.lctxRecords[a.model.name], r.passed {
+                            Badge(text: "长上下文 \(r.ctxTokens / 1024)K✓", color: T.good)
+                        }
                     }
                     Text("\(String(format: "%.1f", a.model.paramsB))B\(a.model.activeB < a.model.paramsB ? " / 激活 \(String(format: "%.1f", a.model.activeB))B" : "") · Q4 \(String(format: "%.1f", a.model.q4GB)) GB · \(a.model.note)")
-                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
                         .lineLimit(compact ? 1 : 2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -776,9 +796,9 @@ struct ModelRow: View {
                 if !compact {
                     VStack(alignment: .trailing, spacing: 3) {
                         Text(String(format: "%.1f GB", a.needGB))
-                            .font(.system(size: 11.5, weight: .medium))
+                            .font(.system(size: 13, weight: .medium))
                         Text(String(format: "占预算 %.0f%%", a.ratio * 100))
-                            .font(.system(size: 10)).foregroundStyle(.secondary)
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
                     }
                 }
 
@@ -788,12 +808,12 @@ struct ModelRow: View {
                             .font(.system(size: 14, weight: .semibold, design: .rounded))
                             .foregroundStyle(a.estTokS > 25 ? T.good : (a.estTokS > 8 ? .primary : T.warn))
                         Text(s.benchmarks[a.model.name] != nil ? "实测 tok/s" : "估算 tok/s")
-                            .font(.system(size: 9.5)).foregroundStyle(.secondary)
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
                     } else {
                         // 出图、转写、重排的"每秒 token"没有意义，不要编一个数出来
                         Text("—").font(.system(size: 14, weight: .semibold, design: .rounded))
                             .foregroundStyle(.secondary)
-                        Text("非对话模型").font(.system(size: 9.5)).foregroundStyle(.secondary)
+                        Text("非对话模型").font(.system(size: 11)).foregroundStyle(.secondary)
                     }
                 }
                 .frame(width: 62, alignment: .trailing)
@@ -836,7 +856,7 @@ struct CapBar: View {
     let value: Double
     var body: some View {
         HStack(spacing: 7) {
-            Text(label).font(.system(size: 10)).foregroundStyle(.secondary)
+            Text(label).font(.system(size: 11)).foregroundStyle(.secondary)
                 .frame(width: 26, alignment: .leading)
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
@@ -847,7 +867,7 @@ struct CapBar: View {
                 }
             }
             .frame(height: 4)
-            Text(String(format: "%.1f", value)).font(.system(size: 9.5, design: .rounded))
+            Text(String(format: "%.1f", value)).font(.system(size: 11, design: .rounded))
                 .foregroundStyle(.secondary).frame(width: 20, alignment: .trailing)
         }
     }
@@ -892,7 +912,7 @@ struct TaskView: View {
                         }
                         Spacer()
                         Text("已选 \(s.pickedTasks.count) 个")
-                            .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
                         if s.pickedTasks.count > 1 {
                             Button("重置") { s.tasks = [s.role.tasks[0]] }
                                 .buttonStyle(.bordered).controlSize(.small)
@@ -904,16 +924,16 @@ struct TaskView: View {
                     Text("权重前 3：" + dims.map { d in
                         "\(d.0) \(String(format: "%.2f", d.1))"
                     }.joined(separator: " · "))
-                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
 
                     ForEach(Array(s.pickedTasks.prefix(3))) { t in
                         Text("· \(t.rawValue)：\(t.rationale)")
-                            .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if s.pickedTasks.count > 3 {
                         Text("· 另 \(s.pickedTasks.count - 3) 个任务已计入权重与门槛")
-                            .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -953,15 +973,15 @@ struct TaskView: View {
                             if cap.vision > 1.5 { CapBar(label: "视觉", value: cap.vision) }
                         }
                         Text(s.taskReason(b, best))
-                            .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                            .font(.system(size: 13)).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         Divider().opacity(0.4)
                         Text("筛选过程：" + rep.accounting)
-                            .font(.system(size: 10.5, design: .monospaced))
+                            .font(.system(size: 12, design: .monospaced))
                             .foregroundStyle(.secondary)
                         ForEach(rep.warnings, id: \.self) { w in
                             Text("⚠ " + w)
-                                .font(.system(size: 10.5)).foregroundStyle(T.warn)
+                                .font(.system(size: 12)).foregroundStyle(T.warn)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -970,12 +990,12 @@ struct TaskView: View {
                 Card {
                     VStack(alignment: .leading, spacing: 5) {
                         Text("这个组合在当前预算与上下文要求下没有合适模型。")
-                            .font(.system(size: 11.5, weight: .medium))
+                            .font(.system(size: 13, weight: .medium))
                         Text("筛选过程：" + rep.accounting)
-                            .font(.system(size: 10.5, design: .monospaced))
+                            .font(.system(size: 12, design: .monospaced))
                             .foregroundStyle(.secondary)
                         Text("可减少同时选中的任务（门槛会随之放宽）、降低上下文要求，或换量化更小的版本。")
-                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -988,21 +1008,21 @@ struct TaskView: View {
                     Card(pad: 10) {
                         HStack(spacing: 16) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(a.model.name).font(.system(size: 12, weight: .medium))
-                                Text(a.model.note).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                                Text(a.model.name).font(.system(size: 13, weight: .medium))
+                                Text(a.model.note).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                             }
                             Spacer()
                             Text("综合 \(String(format: "%.2f", s.taskScore(a.model, b)))")
-                                .font(.system(size: 11)).monospacedDigit()
+                                .font(.system(size: 12)).monospacedDigit()
                                 .foregroundStyle(.secondary)
                                 .frame(width: 80, alignment: .trailing)
                                 .help("能力分乘上家族修正与速度余量，备选就是按这个数排的")
                             Text(String(format: "%.0f tok/s", a.estTokS))
-                                .font(.system(size: 11, weight: .medium)).monospacedDigit()
+                                .font(.system(size: 12, weight: .medium)).monospacedDigit()
                                 .foregroundStyle(a.estTokS > 20 ? T.good : .primary)
                                 .frame(width: 70, alignment: .trailing)
                             Text(String(format: "%.1f GB", a.needGB))
-                                .font(.system(size: 11)).monospacedDigit()
+                                .font(.system(size: 12)).monospacedDigit()
                                 .foregroundStyle(.secondary)
                                 .frame(width: 60, alignment: .trailing)
                             Badge(text: a.level.label, color: fitColor(a.level))
@@ -1015,9 +1035,9 @@ struct TaskView: View {
 
             Card {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("怎么读这个结论").font(.system(size: 11.5, weight: .medium))
+                    Text("怎么读这个结论").font(.system(size: 13, weight: .medium))
                     Text("筛选顺序是容量、上下文、速度、中文语感。多选任务时，上下文取所有选中任务里要求最高的，速度取最高要求。通过筛选取后再按七维加权能力排序，权重由任务决定，所以同一个模型在「论文写作」和「代码实现」下排名不同。\n\n权重先按任务归一化到总和 1 再取平均。不归一化的话，原始权重和不同的任务会被动加码。门槛取最严而不是取平均，否则「写论文 + 看图表」这种组合会被一个两样都不行的模型拿下。\n\n能力分是按模型家族和规模推的先验值，不是公开榜单分数。排序用的是综合分：能力分乘上家族修正与速度余量，所以备选行的综合分可能比首选低一点、但速度更快。跑过实测后，速度以实测为准。")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
                         .lineSpacing(3)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1027,7 +1047,7 @@ struct TaskView: View {
 
     func chip(_ t: String, _ on: Bool, _ act: @escaping () -> Void) -> some View {
         Button(action: act) {
-            Text(t).font(.system(size: 11.5, weight: on ? .semibold : .regular))
+            Text(t).font(.system(size: 13, weight: on ? .semibold : .regular))
                 .padding(.horizontal, 10).padding(.vertical, 4.5)
                 .background(Capsule().fill(on ? T.accent.opacity(0.18) : Color.primary.opacity(0.05)))
                 .foregroundStyle(on ? T.accent : Color.primary.opacity(0.75))
@@ -1041,9 +1061,9 @@ struct TaskView: View {
         Button(action: act) {
             HStack(spacing: 4) {
                 if on {
-                    Image(systemName: "checkmark").font(.system(size: 8.5, weight: .bold))
+                    Image(systemName: "checkmark").font(.system(size: 10, weight: .bold))
                 }
-                Text(t).font(.system(size: 11.5, weight: on ? .semibold : .regular))
+                Text(t).font(.system(size: 13, weight: on ? .semibold : .regular))
             }
             .padding(.horizontal, 10).padding(.vertical, 4.5)
             .background(Capsule().fill(on ? T.accent.opacity(0.18) : Color.primary.opacity(0.05)))
@@ -1056,7 +1076,7 @@ struct TaskView: View {
 
     func gatePill(_ text: String, tip: String) -> some View {
         Text(text)
-            .font(.system(size: 10.5, weight: .medium))
+            .font(.system(size: 12, weight: .medium))
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background(Capsule().fill(Color.primary.opacity(0.05)))
             .overlay(Capsule().strokeBorder(T.line, lineWidth: 0.6))
@@ -1104,19 +1124,19 @@ struct InstalledView: View {
                     }
                     if s.disk.scannedAt == nil && s.issues.isEmpty {
                         Text("还没扫过。点「重新体检」检查模型是否完整、有没有白占空间的文件。")
-                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
                     } else if s.issues.isEmpty {
                         Text("没有发现问题：\(s.disk.manifests.count) 个模型的每个数据层都能对上。")
-                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
                     } else {
                         ForEach(s.issues) { i in
                             HStack(alignment: .top, spacing: 8) {
                                 Circle().fill(sevColor(i.severity)).frame(width: 6, height: 6)
                                     .padding(.top, 5)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(i.title).font(.system(size: 11.5, weight: .medium))
+                                    Text(i.title).font(.system(size: 13, weight: .medium))
                                         .fixedSize(horizontal: false, vertical: true)
-                                    Text(i.detail).font(.system(size: 10.5)).foregroundStyle(.secondary)
+                                    Text(i.detail).font(.system(size: 12)).foregroundStyle(.secondary)
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
                                 Spacer(minLength: 8)
@@ -1140,7 +1160,7 @@ struct InstalledView: View {
                     }
                     if s.disk.rootExists {
                         Text("仓库路径：\(s.disk.root)")
-                            .font(.system(size: 9.5, design: .monospaced))
+                            .font(.system(size: 11, design: .monospaced))
                             .foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
                     }
                 }
@@ -1173,14 +1193,14 @@ struct InstalledView: View {
                         s.requestDelete(s.pickedModels)
                     } label: {
                         Text(String(format: "删除所选 %d 个（%.1f GB）", s.picked.count, s.pickedGB))
-                            .font(.system(size: 11))
+                            .font(.system(size: 12))
                     }
                     .buttonStyle(.bordered).controlSize(.small).tint(T.bad)
-                    Text("已选 \(s.picked.count) 个").font(.system(size: 10.5)).foregroundStyle(.secondary)
+                    Text("已选 \(s.picked.count) 个").font(.system(size: 12)).foregroundStyle(.secondary)
                     Spacer()
                     Button("取消选择") { s.picked.removeAll() }
                         .buttonStyle(.plain).controlSize(.small)
-                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
             }
 
@@ -1189,7 +1209,7 @@ struct InstalledView: View {
                     Text(s.installed.isEmpty
                          ? "还没有下载模型。可以到「模型推荐」里点拉取，或到「导入 GGUF」加载本地文件。"
                          : "没有匹配的模型。")
-                        .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                        .font(.system(size: 13)).foregroundStyle(.secondary)
                 }
             } else {
                 ForEach(s.visibleModels) { m in
@@ -1203,13 +1223,13 @@ struct InstalledView: View {
                     Card(pad: 11) {
                         VStack(alignment: .leading, spacing: 5) {
                             HStack(spacing: 6) {
-                                Text(e.name).font(.system(size: 12, weight: .semibold))
+                                Text(e.name).font(.system(size: 13, weight: .semibold))
                                 Badge(text: e.ready ? e.version : "未安装", color: e.ready ? T.good : T.warn)
                                 Spacer()
                                 Button(e.ready ? "打开" : "去安装") { s.openInstalledApp(e.name) }
                                     .buttonStyle(.bordered).controlSize(.small)
                             }
-                            Text(e.role).font(.system(size: 10)).foregroundStyle(.secondary)
+                            Text(e.role).font(.system(size: 11)).foregroundStyle(.secondary)
                                 .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -1220,7 +1240,7 @@ struct InstalledView: View {
                 SectionHead(title: "操作日志", sub: "")
                 ScrollView {
                     Text(s.log)
-                        .font(.system(size: 10, design: .monospaced))
+                        .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
@@ -1269,25 +1289,28 @@ struct InstalledView: View {
 
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 5) {
-                        Text(m.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                        Text(m.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                        // 统一能力类型徽章：一眼看出是「多模态/文本/嵌入」
+                        let kind = s.modelKind(m.name)
+                        if kind != .unknown {
+                            Badge(text: kind.label, color: kind == .vision ? T.good : (kind == .embed ? .secondary : T.accent))
+                        }
                         if let man {
                             if man.remote { Badge(text: "云端", color: T.accent) }
-                            if man.capabilities.contains("vision") { Badge(text: "视觉", color: T.good) }
                             if man.capabilities.contains("tools") { Badge(text: "工具", color: .secondary) }
                             if man.capabilities.contains("thinking") { Badge(text: "思考", color: .secondary) }
-                            if man.capabilities.contains("embedding") { Badge(text: "嵌入", color: .secondary) }
                         }
                     }
                     Text(subtitle(m, man))
-                        .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                        .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 8)
 
                 Text(man?.remote == true ? "云端" : String(format: "%.1f GB", m.sizeGB))
-                    .font(.system(size: 11, weight: .medium)).monospacedDigit()
+                    .font(.system(size: 12, weight: .medium)).monospacedDigit()
                     .frame(width: 62, alignment: .trailing)
                 Text(ratio > 0 ? String(format: "%.0f%%", ratio * 100) : "—")
-                    .font(.system(size: 11)).monospacedDigit()
+                    .font(.system(size: 12)).monospacedDigit()
                     .foregroundStyle(ratio > 0.92 ? T.bad : (ratio > 0.72 ? T.warn : .secondary))
                     .frame(width: 46, alignment: .trailing)
                     .help("占本机预算的比例")
@@ -1362,14 +1385,14 @@ struct OnlineModelsView: View {
                     if s.hfSearching {
                         HStack(spacing: 7) {
                             ProgressView().controlSize(.small)
-                            Text("正在搜索魔搭与 HuggingFace…").font(.system(size: 11.5)).foregroundStyle(.secondary)
+                            Text("正在搜索魔搭与 HuggingFace…").font(.system(size: 13)).foregroundStyle(.secondary)
                         }
                     }
                     if let err = s.hfError {
-                        Text(err).font(.system(size: 11.5)).foregroundStyle(T.bad)
+                        Text(err).font(.system(size: 13)).foregroundStyle(T.bad)
                     }
                     Text("国内直连魔搭即可搜到大量 GGUF 仓库（含 unsloth / ISTA-DASLab）；HuggingFace 源需能访问 huggingface.co 的网络。下载后到「导入 GGUF」注册即可用，无白名单。")
-                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
             }
 
@@ -1402,8 +1425,8 @@ struct OnlineModelsView: View {
     func sourceChip(_ label: String, _ idx: Int, _ count: Int) -> some View {
         Button { s.searchSource = idx } label: {
             HStack(spacing: 5) {
-                Text(label).font(.system(size: 11.5, weight: s.searchSource == idx ? .semibold : .regular))
-                Text("\(count)").font(.system(size: 10, design: .rounded))
+                Text(label).font(.system(size: 13, weight: s.searchSource == idx ? .semibold : .regular))
+                Text("\(count)").font(.system(size: 11, design: .rounded))
                     .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 10).padding(.vertical, 4.5)
@@ -1417,7 +1440,7 @@ struct OnlineModelsView: View {
     func emptyCard() -> some View {
         Card {
             Text("没有结果。换个关键词，或点「热门 GGUF」看当前社区最火的模型。")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
+                .font(.system(size: 13)).foregroundStyle(.secondary)
         }
     }
 }
@@ -1426,24 +1449,37 @@ struct HFRow: View {
     @EnvironmentObject var s: AppState
     let model: HFModel
 
+    /// 从 modelId 关键词粗判能力类型（HF 搜索 API 不直接给 tasks）
+    var isVision: Bool {
+        let low = model.modelId.lowercased()
+        return low.contains("-vl") || low.contains("vl-") || low.contains("vision")
+            || low.contains("llava") || low.contains("mllama") || low.contains("internvl")
+            || low.contains("minicpm-v") || low.contains("pixtral")
+    }
+
     var body: some View {
         Card(pad: 11) {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
                         Text(model.modelId)
-                            .font(.system(size: 12.5, weight: .semibold))
+                            .font(.system(size: 14, weight: .semibold))
                             .lineLimit(1)
-                        Badge(text: model.license, color: T.accent)
+                        if isVision {
+                            Badge(text: "多模态", color: T.good)
+                        } else if model.isGGUF {
+                            Badge(text: "文本", color: T.accent)
+                        }
+                        Badge(text: model.license, color: .secondary)
                         if model.gated {
                             Badge(text: "需授权", color: T.warn)
                         }
                     }
                     HStack(spacing: 12) {
                         Label("\(model.downloads) 下载", systemImage: "arrow.down.circle")
-                            .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
                         Label("\(model.likes) 赞", systemImage: "heart")
-                            .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                 }
                 Spacer(minLength: 8)
@@ -1463,18 +1499,40 @@ struct MSRow: View {
 
     var body: some View {
         Card(pad: 11) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text("\(model.path)/\(model.name)")
-                            .font(.system(size: 12.5, weight: .semibold))
-                            .lineLimit(1)
-                        Badge(text: model.license, color: T.accent)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Text(model.chineseName.isEmpty ? "\(model.path)/\(model.name)" : model.chineseName)
+                        .font(.system(size: 14, weight: .semibold))
+                        .lineLimit(1)
+                    // 能力类型徽章
+                    if model.isVision {
+                        Badge(text: "多模态", color: T.good)
+                    } else if model.isGGUF {
+                        Badge(text: "文本", color: T.accent)
+                    }
+                    Badge(text: model.license, color: .secondary)
+                }
+                // 完整仓库名（作者/模型）
+                Text("\(model.path)/\(model.name)")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                // 评价 + 体积 + 下载量
+                HStack(spacing: 12) {
+                    if model.stars > 0 {
+                        Label("\(model.stars)", systemImage: "star.fill")
+                            .font(.system(size: 12)).foregroundStyle(T.warn)
+                    }
+                    if !model.sizeText.isEmpty {
+                        Label(model.sizeText, systemImage: "internaldrive")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                     Label("\(model.downloads) 下载", systemImage: "arrow.down.circle")
-                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
-                Spacer(minLength: 8)
+            }
+            HStack {
+                Spacer()
                 Button("下载") { s.listMSFiles(model) }
                     .buttonStyle(.borderedProminent).controlSize(.small)
                 Button("详情") {
@@ -1499,7 +1557,7 @@ struct MSFilesSheet: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("选择要下载的 .gguf").font(.system(size: 15, weight: .semibold))
-                    Text("\(org)/\(name)").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text("\(org)/\(name)").font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button("关闭") { dismiss() }.buttonStyle(.bordered).controlSize(.small)
@@ -1508,18 +1566,21 @@ struct MSFilesSheet: View {
             if s.msFilesLoading {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text("正在读取文件列表…").font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text("正在读取文件列表…").font(.system(size: 13)).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, minHeight: 120)
             } else if s.msFiles.isEmpty {
                 Text("该仓库没有 .gguf 文件（可能是 safetensors 原始权重，需自行转换）。")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .font(.system(size: 13)).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 120)
             } else {
-                ScrollView {
-                    VStack(spacing: 8) {
-                        ForEach(s.msFiles) { f in
-                            fileRow(f)
+                VStack(alignment: .leading, spacing: 8) {
+                    pairingHeader
+                    ScrollView {
+                        VStack(spacing: 8) {
+                            ForEach(s.msFiles) { f in
+                                fileRow(f)
+                            }
                         }
                     }
                 }
@@ -1528,29 +1589,90 @@ struct MSFilesSheet: View {
             // 下载进度
             if let d = s.msDownloading {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(d.path).font(.system(size: 11, weight: .medium)).lineLimit(1)
+                    HStack {
+                        Text(d.path).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                        Spacer()
+                        Button("取消下载") { s.cancelMSDownload() }
+                            .buttonStyle(.bordered).controlSize(.small).tint(T.bad)
+                    }
                     ProgressView(value: d.total > 0 ? Double(d.received) / Double(d.total) : 0)
                     Text(d.total > 0
                          ? "\(fmt(d.received)) / \(fmt(d.total))"
                          : "已下载 \(fmt(d.received))")
-                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 .padding(.top, 4)
             }
         }
         .padding(18)
-        .frame(width: 520, height: 420)
+        .frame(width: 560, height: 460)
+    }
+
+    /// 配对关系说明：明确告诉用户「哪个投影器配哪个主模型」，一眼看清多模态两件套。
+    var pairingHeader: some View {
+        let projs = s.msFiles.filter { $0.isProjector && !$0.isAux }
+        let mains = s.msFiles.filter { !$0.isProjector && !$0.isAux }
+        var lines: [String] = []
+        if !mains.isEmpty && !projs.isEmpty {
+            let main = mains.max(by: { $0.size < $1.size })
+            let pj = projs.min(by: { $0.size < $1.size })
+            if let m = main, let p = pj {
+                lines.append("配对关系：投影器「\(lastComp(p.path))」↔ 主模型「\(lastComp(m.path))」")
+            }
+        }
+        if projs.isEmpty {
+            lines.append("本仓库只有主模型（纯文本 / 视觉模型缺投影器）")
+        } else if mains.isEmpty {
+            lines.append("本仓库只有投影器，缺主模型，无法单独使用")
+        }
+        if lines.isEmpty {
+            lines.append("多模态模型需要「主模型 + 投影器」两件套，点任一个会自动配对下载。")
+        }
+        return VStack(alignment: .leading, spacing: 4) {
+            ForEach(lines, id: \.self) { t in
+                HStack(spacing: 6) {
+                    Image(systemName: "link").font(.system(size: 11)).foregroundStyle(T.accent)
+                    Text(t).font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(T.accent.opacity(0.08)))
+    }
+
+    func lastComp(_ p: String) -> String {
+        (p as NSString).lastPathComponent
     }
 
     func fileRow(_ f: MSFile) -> some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(f.path).font(.system(size: 12, weight: .medium)).lineLimit(1)
-                Text(f.sizeGB).font(.system(size: 10.5)).foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Text(f.path).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                    if f.isAux {
+                        Badge(text: "辅助文件", color: .secondary)
+                    } else if f.isProjector {
+                        Badge(text: "投影器", color: T.warn)
+                    } else {
+                        Badge(text: "主模型", color: T.good)
+                    }
+                }
+                Text(f.sizeGB).font(.system(size: 12)).foregroundStyle(.secondary)
+                // 配对提示：点这个文件会带上谁（辅助文件无配对，直接提示不可下载）
+                if f.isAux {
+                    Text("校准/分词辅助文件，无需下载").font(.system(size: 11)).foregroundStyle(.secondary)
+                        .lineLimit(1)
+                } else if let hint = pairHint(f) {
+                    Text(hint).font(.system(size: 11)).foregroundStyle(T.accent.opacity(0.8))
+                        .lineLimit(1)
+                }
             }
             Spacer()
             let isThis = s.msDownloading?.path == f.path
-            if isThis {
+            if f.isAux {
+                // 辅助文件不提供下载
+            } else if isThis {
                 ProgressView().controlSize(.small)
             } else {
                 Button("下载") { s.downloadMSFile(f) }
@@ -1559,6 +1681,19 @@ struct MSFilesSheet: View {
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+    }
+
+    /// 点这个文件会配对的另一半是谁，直接标在文件行里。
+    func pairHint(_ f: MSFile) -> String? {
+        let projs = s.msFiles.filter { $0.isProjector && !$0.isAux }
+        let mains = s.msFiles.filter { !$0.isProjector && !$0.isAux }
+        if f.isProjector {
+            guard let m = mains.max(by: { $0.size < $1.size }) else { return "缺主模型，无法单独使用" }
+            return "下载时将配主模型：\(lastComp(m.path))"
+        } else {
+            guard let p = projs.min(by: { $0.size < $1.size }) else { return nil }
+            return "下载时将配投影器：\(lastComp(p.path))"
+        }
     }
 
     func fmt(_ b: Int64) -> String {
@@ -1579,7 +1714,7 @@ struct HFFilesSheet: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("选择要下载的 .gguf").font(.system(size: 15, weight: .semibold))
-                    Text(modelId).font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text(modelId).font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button("关闭") { dismiss() }.buttonStyle(.bordered).controlSize(.small)
@@ -1588,18 +1723,21 @@ struct HFFilesSheet: View {
             if s.hfFilesLoading {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text("正在读取文件列表…").font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text("正在读取文件列表…").font(.system(size: 13)).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, minHeight: 120)
             } else if s.hfFiles.isEmpty {
                 Text("该仓库没有 .gguf 文件（可能是 safetensors 原始权重，需自行转换）。")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .font(.system(size: 13)).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 120)
             } else {
-                ScrollView {
-                    VStack(spacing: 8) {
-                        ForEach(s.hfFiles) { f in
-                            fileRow(f)
+                VStack(alignment: .leading, spacing: 8) {
+                    pairingHeader
+                    ScrollView {
+                        VStack(spacing: 8) {
+                            ForEach(s.hfFiles) { f in
+                                fileRow(f)
+                            }
                         }
                     }
                 }
@@ -1607,12 +1745,17 @@ struct HFFilesSheet: View {
 
             if let d = s.hfDownloading {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(d.path).font(.system(size: 11, weight: .medium)).lineLimit(1)
+                    HStack {
+                        Text(d.path).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                        Spacer()
+                        Button("取消下载") { s.cancelHFDownload() }
+                            .buttonStyle(.bordered).controlSize(.small).tint(T.bad)
+                    }
                     ProgressView(value: d.total > 0 ? Double(d.received) / Double(d.total) : 0)
                     Text(d.total > 0
                          ? "\(fmt(d.received)) / \(fmt(d.total))"
                          : "已下载 \(fmt(d.received))")
-                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 .padding(.top, 4)
             }
@@ -1621,15 +1764,70 @@ struct HFFilesSheet: View {
         .frame(width: 520, height: 420)
     }
 
+    /// 配对关系说明：与魔搭版一致，明确「投影器 ↔ 主模型」的配对关系。
+    var pairingHeader: some View {
+        let projs = s.hfFiles.filter { $0.isProjector && !$0.isAux }
+        let mains = s.hfFiles.filter { !$0.isProjector && !$0.isAux }
+        var lines: [String] = []
+        if !mains.isEmpty && !projs.isEmpty {
+            let main = mains.max(by: { $0.size < $1.size })
+            let pj = projs.min(by: { $0.size < $1.size })
+            if let m = main, let p = pj {
+                lines.append("配对关系：投影器「\(lastComp(p.path))」↔ 主模型「\(lastComp(m.path))」")
+            }
+        }
+        if projs.isEmpty {
+            lines.append("本仓库只有主模型（纯文本 / 视觉模型缺投影器）")
+        } else if mains.isEmpty {
+            lines.append("本仓库只有投影器，缺主模型，无法单独使用")
+        }
+        if lines.isEmpty {
+            lines.append("多模态模型需要「主模型 + 投影器」两件套，点任一个会自动配对下载。")
+        }
+        return VStack(alignment: .leading, spacing: 4) {
+            ForEach(lines, id: \.self) { t in
+                HStack(spacing: 6) {
+                    Image(systemName: "link").font(.system(size: 11)).foregroundStyle(T.accent)
+                    Text(t).font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(T.accent.opacity(0.08)))
+    }
+
+    func lastComp(_ p: String) -> String {
+        (p as NSString).lastPathComponent
+    }
+
     func fileRow(_ f: HFFile) -> some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(f.path).font(.system(size: 12, weight: .medium)).lineLimit(1)
-                Text(f.sizeGB).font(.system(size: 10.5)).foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Text(f.path).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                    if f.isAux {
+                        Badge(text: "辅助文件", color: .secondary)
+                    } else if f.isProjector {
+                        Badge(text: "投影器", color: T.warn)
+                    } else {
+                        Badge(text: "主模型", color: T.good)
+                    }
+                }
+                Text(f.sizeGB).font(.system(size: 12)).foregroundStyle(.secondary)
+                if f.isAux {
+                    Text("校准/分词辅助文件，无需下载").font(.system(size: 11)).foregroundStyle(.secondary)
+                        .lineLimit(1)
+                } else if let hint = pairHint(f) {
+                    Text(hint).font(.system(size: 11)).foregroundStyle(T.accent.opacity(0.8))
+                        .lineLimit(1)
+                }
             }
             Spacer()
             let isThis = s.hfDownloading?.path == f.path
-            if isThis {
+            if f.isAux {
+                // 辅助文件不提供下载
+            } else if isThis {
                 ProgressView().controlSize(.small)
             } else {
                 Button("下载") { s.downloadHFFile(f) }
@@ -1638,6 +1836,19 @@ struct HFFilesSheet: View {
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+    }
+
+    /// 点这个文件会配对的另一半是谁。
+    func pairHint(_ f: HFFile) -> String? {
+        let projs = s.hfFiles.filter { $0.isProjector && !$0.isAux }
+        let mains = s.hfFiles.filter { !$0.isProjector && !$0.isAux }
+        if f.isProjector {
+            guard let m = mains.max(by: { $0.size < $1.size }) else { return "缺主模型，无法单独使用" }
+            return "下载时将配主模型：\(lastComp(m.path))"
+        } else {
+            guard let p = projs.min(by: { $0.size < $1.size }) else { return nil }
+            return "下载时将配投影器：\(lastComp(p.path))"
+        }
     }
 
     func fmt(_ b: Int64) -> String {
@@ -1692,13 +1903,13 @@ struct GGUFView: View {
                         Text("把 .gguf 拖到这里")
                             .font(.system(size: 13, weight: .semibold))
                         Text("只选主模型即可。同目录的分片和 mmproj 投影器会自动配对。")
-                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                     Spacer()
                     Button {
                         s.pickGGUF()
                     } label: {
-                        Label("选择文件", systemImage: "plus").font(.system(size: 11.5))
+                        Label("选择文件", systemImage: "plus").font(.system(size: 13))
                     }
                     .buttonStyle(.borderedProminent).controlSize(.small)
                     Button("选择目录") { s.pickGGUFFolder() }
@@ -1719,14 +1930,14 @@ struct GGUFView: View {
             if !s.imports.isEmpty {
                 HStack(spacing: 8) {
                     Text("队列 \(s.imports.count) 个模型 · 合计 \(String(format: "%.1f", total)) GB")
-                        .font(.system(size: 11.5, weight: .medium))
+                        .font(.system(size: 13, weight: .medium))
                     Spacer()
                     if s.busy == nil {
                         Button("全部注册") { s.register([]) }
                             .buttonStyle(.borderedProminent).controlSize(.small)
                             .disabled(!s.imports.contains { $0.status == .idle })
                     } else {
-                        Text(s.busy ?? "").font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text(s.busy ?? "").font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                     Button("清空") { s.clearImports() }
                         .buttonStyle(.bordered).controlSize(.small)
@@ -1738,15 +1949,15 @@ struct GGUFView: View {
             } else {
                 Card {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("什么情况下需要多个文件").font(.system(size: 11.5, weight: .medium))
+                        Text("什么情况下需要多个文件").font(.system(size: 13, weight: .medium))
                         Text("纯文本模型一个 GGUF 就够，分词器、词表、对话模板都写在文件里。")
-                            .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
                         Text("视觉模型还需要同目录的 mmproj-*.gguf，否则只能当纯文本用。")
-                            .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
                         Text("被切成多片的模型，所有分片放在同一目录即可，注册时指向第一片。")
-                            .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
                         Text("向量模型（bge-m3 等）是独立模型，供知识库检索，不能当对话模型。")
-                            .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -1755,7 +1966,7 @@ struct GGUFView: View {
                 SectionHead(title: "注册输出", sub: "")
                 ScrollView {
                     Text(s.log)
-                        .font(.system(size: 10, design: .monospaced))
+                        .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled).padding(10)
@@ -1786,7 +1997,7 @@ struct BundleCard: View {
                         set: { s.renameImport(path: item.id, to: $0) }
                     ))
                     .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(.system(size: 13, design: .monospaced))
                     .frame(width: 240)
                     .disabled(item.status == .running)
 
@@ -1794,10 +2005,10 @@ struct BundleCard: View {
                         Badge(text: "同名已存在，注册会覆盖", color: T.warn)
                     }
                     if let p = OllamaName.problem(item.name) {
-                        Text(p).font(.system(size: 10)).foregroundStyle(T.bad)
+                        Text(p).font(.system(size: 11)).foregroundStyle(T.bad)
                     } else if !taken {
                         Text("ollama run \(item.name)")
-                            .font(.system(size: 10, design: .monospaced))
+                            .font(.system(size: 11, design: .monospaced))
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -1824,14 +2035,14 @@ struct BundleCard: View {
                 }
 
                 if let why = blocked {
-                    Text(why).font(.system(size: 10.5)).foregroundStyle(T.bad)
+                    Text(why).font(.system(size: 12)).foregroundStyle(T.bad)
                         .fixedSize(horizontal: false, vertical: true)
                 } else if b.missingProjector {
                     Text("看着像视觉模型，但同目录没有 mmproj。注册后只能处理文本。")
-                        .font(.system(size: 10.5)).foregroundStyle(T.warn)
+                        .font(.system(size: 12)).foregroundStyle(T.warn)
                 } else if isEmbed {
                     Text("向量模型：注册后用 /api/embed 调用，不参与对话。")
-                        .font(.system(size: 10.5)).foregroundStyle(T.accent)
+                        .font(.system(size: 12)).foregroundStyle(T.accent)
                 }
 
                 HStack(spacing: 8) {
@@ -1851,7 +2062,7 @@ struct BundleCard: View {
                         .disabled(item.status == .running)
 
                     Spacer()
-                    Text(m.path).font(.system(size: 9.5, design: .monospaced))
+                    Text(m.path).font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
                 }
             }
@@ -1877,9 +2088,9 @@ struct BundleCard: View {
     func check(_ ok: Bool, _ label: String) -> some View {
         HStack(spacing: 3) {
             Image(systemName: ok ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                .font(.system(size: 9))
+                .font(.system(size: 10))
                 .foregroundStyle(ok ? T.good : T.warn)
-            Text(label).font(.system(size: 10)).foregroundStyle(.secondary)
+            Text(label).font(.system(size: 11)).foregroundStyle(.secondary)
         }
         .padding(.horizontal, 7).padding(.vertical, 2.5)
         .background(Capsule().fill(Color.primary.opacity(0.04)))
@@ -1888,8 +2099,8 @@ struct BundleCard: View {
 
     func metaKV(_ k: String, _ v: String) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(k).font(.system(size: 9.5)).foregroundStyle(.secondary)
-            Text(v).font(.system(size: 11.5, weight: .medium, design: .rounded))
+            Text(k).font(.system(size: 11)).foregroundStyle(.secondary)
+            Text(v).font(.system(size: 13, weight: .medium, design: .rounded))
         }
     }
 }
@@ -1907,10 +2118,10 @@ struct ChatView: View {
                     Picker("", selection: $s.chatModel) {
                         Text("选择模型").tag("")
                         ForEach(s.chatModels) { m in
-                            Text(m.name).tag(m.name)
+                            Text(s.modelLabel(m)).tag(m.name)
                         }
                     }
-                    .labelsHidden().frame(width: 240).controlSize(.small)
+                    .labelsHidden().frame(width: 260).controlSize(.small)
 
                     Picker("", selection: $s.chatCtx) {
                         ForEach([4096, 8192, 16384, 32768], id: \.self) { v in
@@ -1921,7 +2132,7 @@ struct ChatView: View {
 
                     if let b = s.benchmarks[s.chatModel], b > 0 {
                         Text(String(format: "上次实测 %.1f tok/s", b))
-                            .font(.system(size: 10.5)).foregroundStyle(T.good)
+                            .font(.system(size: 12)).foregroundStyle(T.good)
                     }
                     Spacer()
                     if s.chatBusy {
@@ -1937,9 +2148,9 @@ struct ChatView: View {
             if s.chatModels.isEmpty {
                 Card {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("还没有可对话的模型").font(.system(size: 12, weight: .medium))
+                        Text("还没有可对话的模型").font(.system(size: 13, weight: .medium))
                         Text("到「模型推荐」拉一个，或到「导入 GGUF」把本地的 .gguf 注册进来。导入的模型同样出现在这里，不受内置清单限制。")
-                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -1953,7 +2164,7 @@ struct ChatView: View {
                                 bubble(m).id(m.id)
                             }
                             if s.chatBusy && s.chat.last?.text.isEmpty == true {
-                                Text("正在生成…").font(.system(size: 11)).foregroundStyle(.secondary)
+                                Text("正在生成…").font(.system(size: 12)).foregroundStyle(.secondary)
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1970,7 +2181,7 @@ struct ChatView: View {
             }
 
             if let e = s.chatError {
-                Text(e).font(.system(size: 10.5)).foregroundStyle(T.bad)
+                Text(e).font(.system(size: 12)).foregroundStyle(T.bad)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -1985,16 +2196,16 @@ struct ChatView: View {
                                 }
                             }
                             Text("\(s.pendingImages.count) 张待发送")
-                                .font(.system(size: 10)).foregroundStyle(.secondary)
+                                .font(.system(size: 11)).foregroundStyle(.secondary)
                             Button("清掉") { s.pendingImages.removeAll() }
-                                .buttonStyle(.plain).font(.system(size: 10)).foregroundStyle(T.accent)
+                                .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(T.accent)
                         }
                     }
                     if s.snapshot {
                         // 离屏渲染画不了输入控件，换成等高的静态提示
                         HStack {
                             Text(s.chatInput.isEmpty ? "输入内容，⌘↩ 发送" : s.chatInput)
-                                .font(.system(size: 12.5))
+                                .font(.system(size: 14))
                                 .foregroundStyle(s.chatInput.isEmpty ? Color.secondary : .primary)
                             Spacer(minLength: 0)
                         }
@@ -2003,7 +2214,7 @@ struct ChatView: View {
                     } else {
                         TextField("输入内容，⌘↩ 发送", text: $s.chatInput, axis: .vertical)
                             .textFieldStyle(.plain)
-                            .font(.system(size: 12.5))
+                            .font(.system(size: 14))
                             .lineLimit(1...4)
                             .focused($inputFocused)
                             .padding(.vertical, 4)
@@ -2012,13 +2223,13 @@ struct ChatView: View {
                         Button {
                             s.attachImages()
                         } label: {
-                            Label("图片", systemImage: "photo").font(.system(size: 11))
+                            Label("图片", systemImage: "photo").font(.system(size: 12))
                         }
                         .buttonStyle(.bordered).controlSize(.small)
                         .help("发给视觉模型；纯文本模型会忽略图片")
 
                         Spacer()
-                        Text("本地推理，内容不出本机").font(.system(size: 10)).foregroundStyle(.secondary)
+                        Text("本地推理，内容不出本机").font(.system(size: 11)).foregroundStyle(.secondary)
                         Button(s.chatBusy ? "生成中…" : "发送") { s.sendChat() }
                             .buttonStyle(.borderedProminent).controlSize(.small)
                             .keyboardShortcut(.return, modifiers: .command)
@@ -2037,9 +2248,9 @@ struct ChatView: View {
     var hint: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("这里直接调用本机 Ollama 跑模型，请求不发到外部。")
-                .font(.system(size: 11.5))
+                .font(.system(size: 13))
             Text("带图片提问需要视觉模型（模型行会标「视觉」）。导入的 GGUF 注册后也在这里。")
-                .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                .font(.system(size: 12)).foregroundStyle(.secondary)
         }
         .padding(.vertical, 8)
     }
@@ -2061,7 +2272,7 @@ struct ChatView: View {
                 }
                 if !m.text.isEmpty {
                     Text(m.text)
-                        .font(.system(size: 12.5))
+                        .font(.system(size: 14))
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -2101,14 +2312,14 @@ struct AgentView: View {
                         Picker("", selection: $s.agentModel) {
                             Text("选择模型").tag("")
                             ForEach(s.chatModels) { m in
-                                Text(m.name).tag(m.name)
+                                Text(s.modelLabel(m)).tag(m.name)
                             }
                         }
-                        .labelsHidden().frame(width: 240).controlSize(.small)
+                        .labelsHidden().frame(width: 260).controlSize(.small)
 
-                        Text("工作目录").font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text("工作目录").font(.system(size: 12)).foregroundStyle(.secondary)
                         Text(s.snapshot ? "~" : s.agentCwd)
-                            .font(.system(size: 10.5, design: .monospaced))
+                            .font(.system(size: 12, design: .monospaced))
                             .foregroundStyle(.secondary)
                             .lineLimit(1).truncationMode(.middle)
                             .frame(width: 200, alignment: .leading)
@@ -2117,10 +2328,25 @@ struct AgentView: View {
                         Spacer()
                     }
 
+                    if s.chatModels.isEmpty {
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle").foregroundStyle(T.warn)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("还没有可用的模型，智能体暂时跑不起来。")
+                                    .font(.system(size: 12, weight: .semibold))
+                                Text("去「在线模型」页拉一个支持工具调用的模型（推荐 qwen2.5:14b / 32b，或 llama3.x），装好后这里会自动出现。")
+                                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(T.warn.opacity(0.08)))
+                    }
+
                     if s.snapshot {
                         HStack {
                             Text(s.agentInput.isEmpty ? "描述要完成的事，例如：在 ~/code 下找出所有用了 TODO 标记的文件" : s.agentInput)
-                                .font(.system(size: 12.5))
+                                .font(.system(size: 14))
                                 .foregroundStyle(s.agentInput.isEmpty ? Color.secondary : .primary)
                             Spacer(minLength: 0)
                         }
@@ -2128,7 +2354,7 @@ struct AgentView: View {
                     } else {
                         TextField("描述要完成的事，例如：在 ~/code 下找出所有用了 TODO 标记的文件", text: $s.agentInput, axis: .vertical)
                             .textFieldStyle(.plain)
-                            .font(.system(size: 12.5))
+                            .font(.system(size: 14))
                             .lineLimit(1...4)
                             .padding(.vertical, 4)
                     }
@@ -2137,14 +2363,14 @@ struct AgentView: View {
                         if s.snapshot {
                             HStack(spacing: 6) {
                                 Image(systemName: s.agentAllowWrite ? "checkmark.square.fill" : "square")
-                                    .font(.system(size: 12))
-                                Text("允许写文件和执行命令").font(.system(size: 11))
+                                    .font(.system(size: 13))
+                                Text("允许写文件和执行命令").font(.system(size: 12))
                             }
                             .foregroundStyle(s.agentAllowWrite ? T.good : .secondary)
                         } else {
                             Toggle("允许写文件和执行命令", isOn: $s.agentAllowWrite)
                                 .toggleStyle(.switch).controlSize(.small)
-                                .font(.system(size: 11))
+                                .font(.system(size: 12))
                         }
                         Spacer()
                         if s.agentBusy {
@@ -2159,10 +2385,10 @@ struct AgentView: View {
                                   || s.agentInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                     if let e = s.agentError {
-                        Text(e).font(.system(size: 11)).foregroundStyle(T.bad)
+                        Text(e).font(.system(size: 12)).foregroundStyle(T.bad)
                     }
                     Text("开关关着时，模型要写文件或跑命令会先弹窗问你是否放行；纯读操作（读文件、列目录、搜索）不需要授权。")
-                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -2171,9 +2397,9 @@ struct AgentView: View {
             if s.agentSteps.isEmpty {
                 Card {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("还没有运行记录").font(.system(size: 12.5, weight: .medium))
+                        Text("还没有运行记录").font(.system(size: 14, weight: .medium))
                         Text("可以试：\n· 读 ~/Desktop 下的某个文档并总结\n· 在当前目录找带 TODO 的代码文件\n· 写一个 Python 脚本并跑一遍")
-                            .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                            .font(.system(size: 13)).foregroundStyle(.secondary)
                             .lineSpacing(3)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -2230,13 +2456,13 @@ struct AgentStepRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: icon)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(tint)
                 .frame(width: 16, alignment: .center)
                 .padding(.top, 1)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    Text(step.title).font(.system(size: 11, weight: .semibold))
+                    Text(step.title).font(.system(size: 12, weight: .semibold))
                     Badge(text: kindLabel, color: tint)
                 }
                 Text(step.detail)
@@ -2317,7 +2543,7 @@ struct BenchView: View {
                             .disabled(s.benchRunning != nil || s.benchQueue != nil)
 
                         if let q = s.benchQueue {
-                            Text("\(q.done)/\(q.total)").font(.system(size: 11, design: .monospaced))
+                            Text("\(q.done)/\(q.total)").font(.system(size: 12, design: .monospaced))
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
@@ -2331,10 +2557,10 @@ struct BenchView: View {
                         }
                     }
                     if !s.benchMsg.isEmpty {
-                        Text(s.benchMsg).font(.system(size: 11.5)).foregroundStyle(.secondary)
+                        Text(s.benchMsg).font(.system(size: 13)).foregroundStyle(.secondary)
                     }
                     Text("第一次调用含模型加载时间，第二次起才是稳定速度。全部跑一遍是串行执行的——同时跑会让带宽互相争抢，测出来的数都偏低。")
-                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -2382,14 +2608,14 @@ struct BenchView: View {
                         Spacer()
                     }
                     if let r = s.lctxResult {
-                        Text(r).font(.system(size: 12))
+                        Text(r).font(.system(size: 13))
                             .foregroundStyle(r.hasPrefix("✅") ? T.good : T.warn)
                     }
                     if let d = s.lctxDetail {
-                        Text(d).font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text(d).font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                     Text("短对话看不出问题，上下文变长后注意力误差会累积，导致答非所问、工具调用失败。用「大海捞针」法：答案藏在长文本末尾，答对说明该档上下文还稳定。不同模型的原生长度不同，超了会先失败。")
-                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -2400,7 +2626,7 @@ struct BenchView: View {
                     SectionHead(title: "KV 缓存精度",
                                 sub: "本机 Ollama 默认 FP16，无需担心量化导致的精度损失")
                     Text("Ollama 在 Apple Silicon 上默认用 FP16 的 KV 缓存，不会自动量化。除非你手动设置了 OLLAMA_KV_CACHE_TYPE=q4_0（那种 4-bit 量化才会在长上下文里造成明显精度损失），否则长上下文「变笨」更可能来自模型本身的原生长度上限，而不是 KV 精度。")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -2408,9 +2634,9 @@ struct BenchView: View {
             if rows.isEmpty {
                 Card {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("还没有实测记录").font(.system(size: 12.5, weight: .medium))
+                        Text("还没有实测记录").font(.system(size: 14, weight: .medium))
                         Text("上面选一个模型跑一次即可。跑完之后，推荐页和对话页会用实测值替换估算值，并用颜色区分两者。")
-                            .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                            .font(.system(size: 13)).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -2428,45 +2654,45 @@ struct BenchView: View {
                             Text("时间").frame(width: 96, alignment: .trailing)
                             Color.clear.frame(width: 28)
                         }
-                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
                         .padding(.horizontal, 12).padding(.top, 9).padding(.bottom, 6)
 
                         ForEach(rows) { r in
                             Divider().opacity(0.4)
                             HStack(spacing: 10) {
                                 VStack(alignment: .leading, spacing: 1) {
-                                    Text(r.model).font(.system(size: 12, weight: .medium))
+                                    Text(r.model).font(.system(size: 13, weight: .medium))
                                     if !r.note.isEmpty {
-                                        Text(r.note).font(.system(size: 10)).foregroundStyle(.secondary)
+                                        Text(r.note).font(.system(size: 11)).foregroundStyle(.secondary)
                                             .lineLimit(1)
                                     }
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
 
                                 Text(String(format: "%.1f", r.tps))
-                                    .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
                                     .foregroundStyle(T.good)
                                     .frame(width: 62, alignment: .trailing)
 
                                 Text(estText(r))
-                                    .font(.system(size: 11.5)).monospacedDigit()
+                                    .font(.system(size: 13)).monospacedDigit()
                                     .foregroundStyle(.secondary)
                                     .frame(width: 54, alignment: .trailing)
 
                                 Text(r.prefill > 0 ? String(format: "%.0f", r.prefill) : "—")
-                                    .font(.system(size: 11.5)).monospacedDigit()
+                                    .font(.system(size: 13)).monospacedDigit()
                                     .foregroundStyle(.secondary)
                                     .frame(width: 58, alignment: .trailing)
 
                                 Text(stamp(r.at))
-                                    .font(.system(size: 10.5)).monospacedDigit()
+                                    .font(.system(size: 12)).monospacedDigit()
                                     .foregroundStyle(.secondary)
                                     .frame(width: 96, alignment: .trailing)
 
                                 Button {
                                     s.clearBench(r.model)
                                 } label: {
-                                    Image(systemName: "xmark.circle").font(.system(size: 11))
+                                    Image(systemName: "xmark.circle").font(.system(size: 12))
                                 }
                                 .buttonStyle(.plain).foregroundStyle(.secondary)
                                 .frame(width: 28)

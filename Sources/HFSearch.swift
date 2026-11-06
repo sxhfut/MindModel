@@ -112,6 +112,18 @@ struct HFFile: Codable, Identifiable {
         let p = path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? path
         return URL(string: "https://hf-mirror.com/\(modelId)/resolve/main/\(p)")
     }
+
+    /// 是否投影器（mmproj / clip 视觉编码器），不是主模型
+    var isProjector: Bool {
+        let p = path.lowercased()
+        return p.contains("mmproj") || p.contains("clip")
+    }
+
+    /// 是否辅助文件（imatrix 校准矩阵、tokenizer 等），既不是主模型也不是投影器，不该被当作模型下载
+    var isAux: Bool {
+        let p = path.lowercased()
+        return p.contains("imatrix") || p.contains("tokenizer") || p.contains("chat.template")
+    }
 }
 
 /// 一个正在浏览文件列表的 HF 仓库（用于 sheet(item:) 弹层）。
@@ -131,13 +143,71 @@ struct MSModel: Identifiable, Codable {
     let downloads: Int
     let license: String
     let createdTime: Int      // Unix 秒
+    let stars: Int            // 社区星标数（评价）
+    let chineseName: String   // 中文名，如「千问3-VL-8B-Instruct」
+    let storageSize: Int64    // 仓库体积（字节）
+    let tasks: [String]       // 任务名，如 "image-text-to-text"（视觉多模态）
+    let modelType: [String]   // 模型类型，如 "qwen3_vl"
 
     var pageURL: URL? { URL(string: "https://modelscope.cn/models/\(path)/\(name)") }
     var isGGUF: Bool { name.lowercased().contains("gguf") }
 
+    /// 是否视觉多模态模型（从 Tasks 的 image-text-to-text / domain 判断）
+    var isVision: Bool {
+        tasks.contains { $0.lowercased().contains("image-text-to-text")
+                         || $0.lowercased().contains("multi-modal") }
+        || modelType.contains { $0.lowercased().contains("vl") }
+        || name.lowercased().contains("-vl") || name.lowercased().contains("vl-")
+    }
+
+    /// 体积的可读显示
+    var sizeText: String {
+        guard storageSize > 0 else { return "" }
+        let gb = Double(storageSize) / 1_073_741_824.0
+        if gb >= 100 { return String(format: "%.0f GB", gb) }
+        if gb >= 1 { return String(format: "%.1f GB", gb) }
+        return String(format: "%.0f MB", Double(storageSize) / 1_048_576.0)
+    }
+
     enum CodingKeys: String, CodingKey {
         case path = "Path", name = "Name", downloads = "Downloads",
-             license = "License", createdTime = "CreatedTime"
+             license = "License", createdTime = "CreatedTime",
+             stars = "Stars", chineseName = "ChineseName",
+             storageSize = "StorageSize", tasks = "Tasks", modelType = "ModelType"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        path = try c.decode(String.self, forKey: .path)
+        name = try c.decode(String.self, forKey: .name)
+        downloads = try c.decodeIfPresent(Int.self, forKey: .downloads) ?? 0
+        license = try c.decodeIfPresent(String.self, forKey: .license) ?? "未知"
+        createdTime = try c.decodeIfPresent(Int.self, forKey: .createdTime) ?? 0
+        stars = try c.decodeIfPresent(Int.self, forKey: .stars) ?? 0
+        chineseName = try c.decodeIfPresent(String.self, forKey: .chineseName) ?? ""
+        storageSize = try c.decodeIfPresent(Int64.self, forKey: .storageSize) ?? 0
+        modelType = try c.decodeIfPresent([String].self, forKey: .modelType) ?? []
+        // Tasks 是嵌套数组 [{"Name":"image-text-to-text", "ChineseName":"视觉多模态理解", ...}]
+        if let arr = try c.decodeIfPresent([MSTask].self, forKey: .tasks) {
+            tasks = arr.map { $0.name }
+        } else {
+            tasks = []
+        }
+    }
+}
+
+/// 魔搭 Tasks 数组里的一项（只需 Name 字段用于判断类型）。
+struct MSTask: Codable {
+    let name: String
+    let chineseName: String
+    enum CodingKeys: String, CodingKey {
+        case name = "Name"
+        case chineseName = "ChineseName"
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+        chineseName = try c.decodeIfPresent(String.self, forKey: .chineseName) ?? ""
     }
 }
 

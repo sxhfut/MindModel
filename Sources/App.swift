@@ -104,6 +104,12 @@ final class AppState: ObservableObject {
     @Published var lctxResult: String?      // 测试结论文字
     @Published var lctxDetail: String?      // 详细（上下文长度、是否答对、token 数）
     @Published var lctxTokens = 32768       // 测试上下文档位，默认 32K
+    /// 长上下文测试结果（按模型名存，含是否通过 + 测过的上下文档位），供报告与推荐筛选用
+    @Published var lctxRecords: [String: LctxRecord] = [:] {
+        didSet { saveLctx() }
+    }
+    /// 推荐页「只看长上下文通过」筛选开关
+    @Published var lctxOnly = false
 
     // 模型拉取进度（ollama pull 实时解析）
     /// 正在拉取的模型 tag；nil 表示当前没有进行中的拉取
@@ -136,12 +142,16 @@ final class AppState: ObservableObject {
     /// 正在下载的文件（含进度：已下载/总字节）
     @Published var msDownloading: (path: String, received: Int64, total: Int64)?
     @Published var msDownloaded: URL?
+    /// 魔搭下载任务句柄（供取消用）
+    private var msDownloadTask: Task<Void, Never>?
 
     // HuggingFace 应用内直下（与魔搭并行的一套状态）
     @Published var hfListing: HFListing?
     @Published var hfFiles: [HFFile] = []
     @Published var hfFilesLoading = false
     @Published var hfDownloading: (path: String, received: Int64, total: Int64)?
+    /// HF 下载任务句柄（供取消用）
+    private var hfDownloadTask: Task<Void, Never>?
 
     // 模型仓库
     @Published var disk = DiskScan()
@@ -192,6 +202,7 @@ final class AppState: ObservableObject {
             tab = t
         }
         loadBench()
+        loadLctx()
     }
 
     /// 实测记录只暴露成 [模型名: tok/s] 给推荐引擎，历史细节留在 benchRecords 里
@@ -276,6 +287,21 @@ final class AppState: ObservableObject {
         benchRecords = Dictionary(uniqueKeysWithValues: list.map { ($0.model, $0) })
     }
 
+    // MARK: - 长上下文测试记录持久化
+
+    private static let lctxKey = "mm.lctx"
+
+    private func saveLctx() {
+        guard let data = try? JSONEncoder().encode(Array(lctxRecords.values)) else { return }
+        UserDefaults.standard.set(data, forKey: Self.lctxKey)
+    }
+
+    private func loadLctx() {
+        guard let data = UserDefaults.standard.data(forKey: Self.lctxKey),
+              let list = try? JSONDecoder().decode([LctxRecord].self, from: data) else { return }
+        lctxRecords = Dictionary(uniqueKeysWithValues: list.map { ($0.model, $0) })
+    }
+
     func need(_ m: LocalModel, ctx: Int? = nil) -> Double { advisor.need(m, ctx: ctx) }
     func level(_ m: LocalModel) -> FitLevel { advisor.level(m) }
     func ratio(_ m: LocalModel) -> Double { advisor.ratio(m) }
@@ -284,7 +310,12 @@ final class AppState: ObservableObject {
     func match(_ p: Purpose) -> (Advice, String)? { advisor.match(p) }
     func topMatches(_ p: Purpose, limit: Int = 3) -> [Advice] { advisor.topMatches(p, limit: limit) }
 
-    var ranked: [Advice] { advisor.ranked(category: category) }
+    var ranked: [Advice] {
+        let base = advisor.ranked(category: category)
+        // 「只看长上下文通过」：仅保留在长上下文测试中答对的模型
+        guard lctxOnly else { return base }
+        return base.filter { lctxRecords[$0.model.name]?.passed == true }
+    }
     func taskMatches(_ b: TaskBlend, limit: Int = 4) -> [Advice] { advisor.taskMatches(b, limit: limit) }
     func taskMatchesWithReport(_ b: TaskBlend, limit: Int = 4) -> ([Advice], GateReport) {
         advisor.taskMatchesWithReport(b, limit: limit)
@@ -629,30 +660,87 @@ final class AppState: ObservableObject {
             toast = "已有文件在下载，请稍候"
             return
         }
+        // 辅助文件（imatrix/tokenizer）不是模型，禁止下载
+        if file.isAux {
+            toast = "「\(file.path)」是校准/辅助文件，不是模型，无需下载"
+            return
+        }
         let dir = Self.downloadDir()
-        msDownloading = (path: file.path, received: 0, total: file.size)
-        Task {
-            do {
-                let saved = try await MSDownload.download(
-                    org: listing.org, name: listing.name, filePath: file.path, to: dir
-                ) { recv, total in
-                    Task { @MainActor in
-                        self.msDownloading = (path: file.path, received: recv, total: total)
+
+        // 智能配对：多模态模型需要「主模型 + 投影器」两件套。
+        // 点投影器 → 自动带上同仓库最大的主模型；点主模型 → 自动带上配套投影器。
+        let targetFiles = Self.pairFiles(files: msFiles, clicked: file)
+
+        msDownloadTask = Task {
+            var downloaded: [URL] = []
+            for f in targetFiles {
+                if Task.isCancelled { break }
+                msDownloading = (path: f.path, received: 0, total: f.size)
+                do {
+                    let saved = try await MSDownload.download(
+                        org: listing.org, name: listing.name, filePath: f.path, to: dir
+                    ) { recv, total in
+                        Task { @MainActor in
+                            self.msDownloading = (path: f.path, received: recv, total: total)
+                        }
                     }
-                }
-                await MainActor.run {
-                    self.msDownloading = nil
-                    self.msDownloaded = saved
-                    self.toast = "已下载 \(file.path)，正在解析…"
-                    // 直接走导入解析，把下载的 gguf 识别出来
-                    self.loadGGUF(paths: [saved.path])
-                }
-            } catch {
-                await MainActor.run {
-                    self.msDownloading = nil
-                    self.toast = "下载失败：\(error.localizedDescription)"
+                    downloaded.append(saved)
+                } catch {
+                    if Task.isCancelled {
+                        break
+                    }
+                    await MainActor.run {
+                        self.msDownloading = nil
+                        self.toast = "下载失败：\(error.localizedDescription)"
+                    }
+                    return
                 }
             }
+            await MainActor.run {
+                self.msDownloading = nil
+                self.msDownloadTask = nil
+                if Task.isCancelled {
+                    self.toast = "已取消下载，已下完的部分保留"
+                    return
+                }
+                let names = downloaded.map { $0.path }
+                let extra = targetFiles.count > 1 ? "（含自动配对的 \(targetFiles.count) 个文件）" : ""
+                self.toast = "已下载\(extra)，正在解析…"
+                // 一次性把主模型+投影器都传给 loadGGUF，由 assemble 自动配对成完整多模态模型
+                self.loadGGUF(paths: names)
+            }
+        }
+    }
+
+    /// 取消魔搭应用内直下（已下载部分保留，可重新下载续传）。
+    func cancelMSDownload() {
+        msDownloadTask?.cancel()
+        msDownloadTask = nil
+        msDownloading = nil
+        toast = "已请求取消下载"
+    }
+
+    /// 配对决策：返回最终要下载的文件列表（已按「主模型在前、投影器在后」排序）。
+    /// clicked 是投影器时自动补主模型；clicked 是主模型时自动补投影器（若有）。
+    /// 辅助文件（imatrix/tokenizer）既非主模型也非投影器，一律排除，不参与配对。
+    static func pairFiles(files: [MSFile], clicked: MSFile) -> [MSFile] {
+        let projs = files.filter { $0.isProjector && !$0.isAux }
+        let mains = files.filter { !$0.isProjector && !$0.isAux }
+
+        if clicked.isProjector {
+            // 点了投影器：投影器 + 同仓库最大的主模型
+            let main = mains.max(by: { $0.size < $1.size })
+            var out: [MSFile] = []
+            if let m = main { out.append(m) }
+            out.append(clicked)
+            return out
+        } else {
+            // 点了主模型：主模型 + 若有投影器则带上（取最小的投影器，视觉投影器通常单一）
+            var out: [MSFile] = [clicked]
+            if let pj = projs.min(by: { $0.size < $1.size }), pj.path != clicked.path {
+                out.append(pj)
+            }
+            return out
         }
     }
 
@@ -681,32 +769,88 @@ final class AppState: ObservableObject {
 
     /// 应用内直下 HF 仓库的某个 .gguf 文件（走 hf-mirror resolve 直链）。
     func downloadHFFile(_ file: HFFile) {
-        guard let listing = hfListing, let url = file.downloadURL(modelId: listing.modelId) else { return }
+        guard let listing = hfListing else { return }
         if hfDownloading != nil || msDownloading != nil {
             toast = "已有文件在下载，请稍候"
             return
         }
+        // 辅助文件（imatrix/tokenizer）不是模型，禁止下载，给出明确提示
+        if file.isAux {
+            toast = "「\(file.path)」是校准/辅助文件，不是模型，无需下载"
+            return
+        }
         let dir = Self.downloadDir()
-        hfDownloading = (path: file.path, received: 0, total: Int64(file.size))
-        Task {
-            do {
-                let saved = try await MSDownload.download(url: url, saveName: (file.path as NSString).lastPathComponent, to: dir
-                ) { recv, total in
-                    Task { @MainActor in
-                        self.hfDownloading = (path: file.path, received: recv, total: total)
+
+        // 智能配对：与魔搭一致，多模态两件套自动配齐
+        let targetFiles = Self.pairHFFiles(files: hfFiles, clicked: file)
+
+        hfDownloadTask = Task {
+            var downloaded: [URL] = []
+            for f in targetFiles {
+                if Task.isCancelled { break }
+                guard let url = f.downloadURL(modelId: listing.modelId) else {
+                    await MainActor.run { self.toast = "下载地址无效：\(f.path)" }
+                    continue
+                }
+                hfDownloading = (path: f.path, received: 0, total: Int64(f.size))
+                do {
+                    let saved = try await MSDownload.download(
+                        url: url, saveName: (f.path as NSString).lastPathComponent, to: dir
+                    ) { recv, total in
+                        Task { @MainActor in
+                            self.hfDownloading = (path: f.path, received: recv, total: total)
+                        }
                     }
-                }
-                await MainActor.run {
-                    self.hfDownloading = nil
-                    self.toast = "已下载 \(file.path)，正在解析…"
-                    self.loadGGUF(paths: [saved.path])
-                }
-            } catch {
-                await MainActor.run {
-                    self.hfDownloading = nil
-                    self.toast = "下载失败：\(error.localizedDescription)"
+                    downloaded.append(saved)
+                } catch {
+                    if Task.isCancelled { break }
+                    await MainActor.run {
+                        self.hfDownloading = nil
+                        self.toast = "下载失败：\(error.localizedDescription)"
+                    }
+                    return
                 }
             }
+            await MainActor.run {
+                self.hfDownloading = nil
+                self.hfDownloadTask = nil
+                if Task.isCancelled {
+                    self.toast = "已取消下载，已下完的部分保留"
+                    return
+                }
+                let names = downloaded.map { $0.path }
+                let extra = targetFiles.count > 1 ? "（含自动配对的 \(targetFiles.count) 个文件）" : ""
+                self.toast = "已下载\(extra)，正在解析…"
+                self.loadGGUF(paths: names)
+            }
+        }
+    }
+
+    /// 取消 HF 应用内直下（已下载部分保留）。
+    func cancelHFDownload() {
+        hfDownloadTask?.cancel()
+        hfDownloadTask = nil
+        hfDownloading = nil
+        toast = "已请求取消下载"
+    }
+
+    /// HF 版配对决策，逻辑与魔搭一致。辅助文件（imatrix/tokenizer）同样排除。
+    static func pairHFFiles(files: [HFFile], clicked: HFFile) -> [HFFile] {
+        let projs = files.filter { $0.isProjector && !$0.isAux }
+        let mains = files.filter { !$0.isProjector && !$0.isAux }
+
+        if clicked.isProjector {
+            let main = mains.max(by: { $0.size < $1.size })
+            var out: [HFFile] = []
+            if let m = main { out.append(m) }
+            out.append(clicked)
+            return out
+        } else {
+            var out: [HFFile] = [clicked]
+            if let pj = projs.min(by: { $0.size < $1.size }), pj.path != clicked.path {
+                out.append(pj)
+            }
+            return out
         }
     }
 
@@ -914,18 +1058,21 @@ final class AppState: ObservableObject {
         let b = item.bundle
         let name = item.name
 
-        // 分片时 FROM 指向第一片，llama.cpp 会按命名自动加载其余片
-        var mainPath = b.main.path
-        if b.main.splitCount > 1,
-           let first = b.shards.first(where: { (splitToken(($0 as NSString).lastPathComponent)?.no ?? 9) == 1 }) {
-            mainPath = first
+        // 分片 GGUF：Ollama 不会按命名自动加载分片，必须在 Modelfile 里逐片写 FROM。
+        // （单 FROM 指向第一片会报 "invalid split GGUF: has 1 shards, expected N"）
+        var fromPaths: [String] = []
+        if b.main.splitCount > 1 && b.shards.count >= b.main.splitCount {
+            // shards 已按分片序号升序排好，直接逐片 FROM
+            fromPaths = b.shards
+        } else {
+            fromPaths = [b.main.path]
         }
 
         // 上下文：不超过模型原生长度，也不超过 32K（再大对多数机器是负担）
         let nativeCtx = b.main.contextLength
         let ctx = nativeCtx > 0 ? min(nativeCtx, 32768) : 8192
 
-        var modelfile = "FROM \(mainPath)\n"
+        var modelfile = fromPaths.map { "FROM \($0)\n" }.joined()
         if let pj = b.projector { modelfile += "FROM \(pj.path)\n" }
         modelfile += "PARAMETER num_ctx \(ctx)\nPARAMETER temperature 0.8\n"
 
@@ -1042,6 +1189,50 @@ final class AppState: ObservableObject {
     /// 已装模型对应的仓库元数据（量化、参数量、能力），来自 manifest 的 config blob
     func manifest(_ name: String) -> OllamaManifest? {
         disk.manifests.first { $0.name == name }
+    }
+
+    /// 判断一个模型的能力类型。优先用 Ollama 返回的 capabilities（准确）；
+    /// 当 capabilities 缺失（GGUF 手动导入的模型常这样）时，从模型名/family 兜底推断。
+    func modelKind(_ name: String) -> ModelKind {
+        let man = manifest(name)
+        let caps = man?.capabilities ?? []
+        let low = name.lowercased()
+        let fam = (man?.family ?? "").lowercased()
+
+        // 1. 显式 capabilities 优先
+        if caps.contains("embedding") && !caps.contains("completion") {
+            return .embed
+        }
+        if caps.contains("vision") { return .vision }
+        if caps.contains("completion") { return .text }
+
+        // 2. 兜底：从名字/family 推断
+        // 嵌入模型关键词
+        let embedHints = ["embed", "bge-", "nomic-", "-e5", "gte-", "mxbai", "stella"]
+        if embedHints.contains(where: { low.contains($0) }) { return .embed }
+
+        // 多模态（看图）关键词
+        let visionHints = ["-vl", "vl-", "vision", "llava", "mllama", "pixtral",
+                           "internvl", "minicpm-v", "gemma3", "mmproj", "qwen2.5-omni", "molmo"]
+        if visionHints.contains(where: { low.contains($0) }) || fam.contains("vl") {
+            return .vision
+        }
+
+        // 3. 有 manifest 但没识别出任何能力 → 视为纯文本（能对话是默认假设）
+        if man != nil { return .text }
+
+        return .unknown
+    }
+
+    /// 模型选择列表里带能力类型的显示名，例如「多模态 · qwen3-vl-4b-ms」。
+    func modelLabel(_ m: InstalledModel) -> String {
+        let k = modelKind(m.name)
+        switch k {
+        case .vision: return "🖼️ \(m.name)"
+        case .embed:  return "🧮 \(m.name)"
+        case .text:   return "💬 \(m.name)"
+        case .unknown: return m.name
+        }
     }
 
     func togglePick(_ m: InstalledModel) {
@@ -1279,7 +1470,7 @@ final class AppState: ObservableObject {
             "messages": messages,
             "tools": AgentTools.definitions,
             "stream": false,
-            "options": ["num_ctx": 8192, "temperature": 0.3],
+            "options": ["num_ctx": 32768, "temperature": 0.3],
         ]
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
         do {
@@ -1334,12 +1525,14 @@ final class AppState: ObservableObject {
             var messages: [[String: Any]] = [
                 ["role": "system", "content": """
                 你是运行在本机的一个智能体，负责完成用户交给你的任务。工作目录是 \(cwd)。
+                你有这些工具可用：read_file（读文件）、list_dir（列目录）、search_files（按名或内容搜文件）、read_web（联网抓网页正文）、write_file（写文件）、run_command（执行命令）。
                 规则：
-                1. 能自己动手的（读文件、列目录、搜索）直接调用工具；需要写文件或执行命令时先规划好，一次只做一个有把握的动作。
-                2. 每个工具调用前想清楚参数对不对，尤其是绝对路径。
-                3. 拿到工具结果后，判断是否还需要继续；不需要了就给出最终答复，不要再调用工具。
-                4. 最终答复要直接回答用户的问题，说清楚你做了什么、结论是什么。
+                1. 先动手再回答：凡是要看文件、找文件、查内容，必须先调用对应工具拿到真实结果，不要凭空猜。
+                2. 每个工具调用前想清楚参数对不对，路径一律用绝对路径；相对路径默认基于工作目录 \(cwd)。
+                3. 拿到工具结果后判断是否还要继续；不需要了就给出最终答复，且不要再调用任何工具。
+                4. 最终答复要直接回答用户，说清楚你做了什么、结论是什么。
                 5. 不要编造文件内容或命令输出；拿不到的信息就直说拿不到。
+                6. 一次最多调用一个工具，等结果回来再决定下一步。
                 """],
                 ["role": "user", "content": task],
             ]
@@ -1360,7 +1553,13 @@ final class AppState: ObservableObject {
                         self.agentSteps.append(AgentStep(kind: .answer, title: "答复", detail: r.text))
                         break
                     } else {
-                        self.agentSteps.append(AgentStep(kind: .thought, title: "第 \(step) 步", detail: r.text))
+                        // 思考步骤：文字 + 本步要调用的工具与关键参数，让过程一目了然
+                        var detail = r.text
+                        let callsDesc = r.calls.map { self.describeCall($0) }.joined(separator: "\n")
+                        if !callsDesc.isEmpty {
+                            detail += (detail.isEmpty ? "" : "\n\n") + "→ 调用：" + callsDesc
+                        }
+                        self.agentSteps.append(AgentStep(kind: .thought, title: "第 \(step) 步", detail: detail))
                     }
                 }
                 // 没有工具调用 = 结束
@@ -1368,6 +1567,9 @@ final class AppState: ObservableObject {
                     if finalAnswer.isEmpty { finalAnswer = "（模型没有给出文字答复）" }
                     break
                 }
+                // 先回传 assistant 的 tool_calls，再接 tool 结果——Ollama 要求顺序
+                // 必须是 assistant(tool_calls) → tool(...) → tool(...)，否则模型会困惑。
+                messages.append(self.assistantToolMsg(calls: r.calls))
                 // 执行工具
                 for call in r.calls {
                     if Task.isCancelled { break }
@@ -1389,10 +1591,12 @@ final class AppState: ObservableObject {
                         kind: res.ok ? .tool : .result,
                         title: call.name,
                         detail: res.output.isEmpty ? "（空）" : res.output))
-                    messages.append(self.toolMsg(call, ok: res.ok, output: res.output))
+                    // 回传给模型的结果截到 12000 字符，避免长文件把 32K 上下文撑爆
+                    let clipped = res.output.count > 12000
+                        ? String(res.output.prefix(12000)) + "\n…（结果过长已截断）"
+                        : res.output
+                    messages.append(self.toolMsg(call, ok: res.ok, output: clipped))
                 }
-                // 把模型这轮的 tool_calls 也回传，保持消息流完整
-                messages.append(self.assistantToolMsg(calls: r.calls))
             }
 
             if finalAnswer.isEmpty && !self.agentSteps.isEmpty {
@@ -1416,6 +1620,26 @@ final class AppState: ObservableObject {
             ["function": ["name": c.name, "arguments": c.arguments]]
         }
         return ["role": "assistant", "tool_calls": tc]
+    }
+
+    /// 把一次工具调用概括成一行可读文字，展示在"思考"步骤里。
+    private func describeCall(_ c: ToolCall) -> String {
+        switch c.name {
+        case "read_file":
+            return "read_file(\(c.arguments["path"] ?? "?"))"
+        case "list_dir":
+            return "list_dir(\(c.arguments["path"] ?? "?"))"
+        case "search_files":
+            return "search_files(dir=\(c.arguments["dir"] ?? "?"), 关键词=\(c.arguments["keyword"] ?? "?"))"
+        case "read_web":
+            return "read_web(\(c.arguments["url"] ?? "?"))"
+        case "write_file":
+            return "write_file(\(c.arguments["path"] ?? "?"))"
+        case "run_command":
+            return "run_command(\(c.arguments["command"] ?? "?"))"
+        default:
+            return c.name
+        }
     }
 
     /// 弹确认框，等用户决定是否允许写文件/执行命令。返回是否批准。
@@ -1537,6 +1761,15 @@ final class AppState: ObservableObject {
 
     /// 长上下文稳定性测试（needle-in-haystack）。
     /// 造一段 N token 的"干草"文本，在末尾藏一根"针"（一个独特的人名+数字），
+    /// 一条长上下文稳定性测试结果。
+    struct LctxRecord: Codable {
+        var model: String
+        var passed: Bool          // 是否答对
+        var ctxTokens: Int        // 测试的上下文档位
+        var answer: String        // 模型回答
+        var at: Date
+    }
+
     /// 让模型读完整个上下文后回答"针是什么"。答对=长上下文没有崩塌，答错=在长
     /// 上下文下注意力/精度已经失效。这正是"本地模型部署即变笨"的关键检测。
     func runLongContextTest(model: String, targetTokens: Int = 32000) {
@@ -1585,6 +1818,8 @@ final class AppState: ObservableObject {
                 let correct = answer.contains("紫荆花") || answer.contains("4278") || answer.contains("四二七八")
                 await MainActor.run {
                     self.lctxDetail = "上下文 \(ctxLen) token · 模型回答「\(answer)」"
+                    self.lctxRecords[model] = LctxRecord(model: model, passed: correct,
+                                                         ctxTokens: ctxLen, answer: answer, at: Date())
                     if correct {
                         self.lctxResult = "✅ 长上下文稳定：正确提取出「紫荆花四二七八」"
                         self.benchMsg = "长上下文测试通过"
@@ -1694,6 +1929,13 @@ final class AppState: ObservableObject {
                 s += String(format: "| %@ | %.1f | %.0f | %d | %@ |\n",
                             r.model, r.tps, r.prefill, r.tokens, f.string(from: r.at))
             }
+        }
+        if !lctxRecords.isEmpty {
+            s += "\n## 长上下文稳定性测试\n\n| 模型 | 结果 | 上下文档位 | 模型回答 |\n|---|---|---|---|\n"
+            for r in lctxRecords.values.sorted(by: { $0.ctxTokens > $1.ctxTokens }) {
+                s += "| \(r.model) | \(r.passed ? "✅ 通过" : "⚠️ 未通过") | \(r.ctxTokens) token | \(r.answer) |\n"
+            }
+            s += "\n> 测试法：把答案藏在长文本末尾（大海捞针），答对说明该档上下文下注意力还稳定。\n"
         }
         s += "\n> 体积与适配参考 localmodel.run（2026-11）；速度为估算，实测值以本机运行为准。\n"
         let path = NSHomeDirectory() + "/Desktop/MindModel体检报告-\(Int(Date().timeIntervalSince1970)).md"

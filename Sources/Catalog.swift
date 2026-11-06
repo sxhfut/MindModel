@@ -252,6 +252,23 @@ struct InstalledModel: Identifiable {
     var deletable: Bool { engine == "Ollama" }
 }
 
+/// 模型能力类型（用于「已装/对话/智能体」里给用户一个直观的类型标识）。
+enum ModelKind {
+    case vision      // 多模态：能看图
+    case text        // 纯文本：只能对话
+    case embed       // 嵌入：只出向量，不能对话
+    case unknown     // 无法判断
+
+    var label: String {
+        switch self {
+        case .vision: return "多模态"
+        case .text: return "文本"
+        case .embed: return "嵌入"
+        case .unknown: return "—"
+        }
+    }
+}
+
 enum Runtime {
     static func detect() -> [Engine] {
         var list: [Engine] = []

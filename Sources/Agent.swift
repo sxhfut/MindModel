@@ -73,6 +73,13 @@ enum AgentTools {
                 ["name": "cwd", "type": "string", "description": "工作目录，默认用户主目录", "required": false],
             ]
         ),
+        funcDef(
+            name: "read_web",
+            desc: "抓取一个网页的正文文本。用于查询资料、阅读在线文档、获取最新信息。返回网页文本（去掉了 HTML 标签）。",
+            params: [
+                ["name": "url", "type": "string", "description": "要抓取的完整网址（含 https://）", "required": true],
+            ]
+        ),
     ]
 
     private static func funcDef(name: String, desc: String, params: [[String: Any]]) -> [String: Any] {
@@ -119,6 +126,8 @@ enum AgentExecutor {
             return writeFile(call.arguments)
         case "run_command":
             return runCommand(call.arguments)
+        case "read_web":
+            return readWeb(call.arguments)
         default:
             return ToolResult(name: call.name, ok: false, output: "未知工具：\(call.name)")
         }
@@ -268,5 +277,73 @@ enum AgentExecutor {
         if n >= 1024 * 1024 { return String(format: "%.1f MB", Double(n) / 1048576) }
         if n >= 1024 { return String(format: "%.1f KB", Double(n) / 1024) }
         return "\(n) B"
+    }
+
+    // MARK: 联网
+
+    /// 抓网页正文：同步等待 dataTask 完成（智能体跑在后台 Task，不会卡 UI）。
+    /// 用信号量把异步 URLSession 转同步，避免 Data(contentsOf:) 在主线程的阻塞风险。
+    private static func readWeb(_ a: [String: String]) -> ToolResult {
+        guard let urlStr = a["url"], !urlStr.isEmpty,
+              let url = URL(string: urlStr),
+              url.scheme == "https" || url.scheme == "http" else {
+            return ToolResult(name: "read_web", ok: false, output: "需要合法的 http/https 网址")
+        }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 20
+        req.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) MindModel/1.0", forHTTPHeaderField: "User-Agent")
+        req.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
+
+        let sem = DispatchSemaphore(value: 0)
+        var result: ToolResult?
+        let task = URLSession.shared.dataTask(with: req) { data, resp, err in
+            defer { sem.signal() }
+            if let err {
+                result = ToolResult(name: "read_web", ok: false, output: "抓取失败：\(err.localizedDescription)")
+                return
+            }
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
+            guard code == 200, let data else {
+                result = ToolResult(name: "read_web", ok: false, output: "抓取失败（HTTP \(code)）")
+                return
+            }
+            guard let html = String(data: data, encoding: .utf8) else {
+                result = ToolResult(name: "read_web", ok: false, output: "无法解码网页内容（可能是二进制）")
+                return
+            }
+            let text = Self.htmlToText(html)
+            if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                result = ToolResult(name: "read_web", ok: false, output: "网页抓到了但正文为空（可能是纯 JS 渲染页面）")
+                return
+            }
+            let clipped = text.count > 15000 ? String(text.prefix(15000)) + "\n…（正文过长已截断）" : text
+            result = ToolResult(name: "read_web", ok: true, output: clipped)
+        }
+        task.resume()
+        sem.wait()
+        return result ?? ToolResult(name: "read_web", ok: false, output: "抓取超时")
+    }
+
+    /// 把 HTML 剥成纯文本：去 script/style，去标签，压缩空白。
+    private static func htmlToText(_ html: String) -> String {
+        var s = html
+        // 去掉 script / style 块
+        s = s.replacingOccurrences(of: "(?is)<script.*?</script>", with: " ", options: .regularExpression)
+        s = s.replacingOccurrences(of: "(?is)<style.*?</style>", with: " ", options: .regularExpression)
+        // 换行标签 → 换行
+        s = s.replacingOccurrences(of: "(?i)</?(p|div|br|li|h[1-6]|tr)[^>]*>", with: "\n", options: .regularExpression)
+        // 其余标签去掉
+        s = s.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+        // HTML 实体
+        s = s.replacingOccurrences(of: "&nbsp;", with: " ")
+        s = s.replacingOccurrences(of: "&amp;", with: "&")
+        s = s.replacingOccurrences(of: "&lt;", with: "<")
+        s = s.replacingOccurrences(of: "&gt;", with: ">")
+        s = s.replacingOccurrences(of: "&quot;", with: "\"")
+        s = s.replacingOccurrences(of: "&#39;", with: "'")
+        // 压缩连续空白为单个空格，连续换行压成单个换行
+        s = s.replacingOccurrences(of: "[ \t]+", with: " ", options: .regularExpression)
+        s = s.replacingOccurrences(of: "\n{3,}", with: "\n\n", options: .regularExpression)
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

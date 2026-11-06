@@ -1,5 +1,6 @@
 # 构建产物
 build/
+.build/
 rust/target/
 shells/tauri/src-tauri/target/
 ui/dist/
