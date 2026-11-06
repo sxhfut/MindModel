@@ -1586,7 +1586,7 @@ struct MSFilesSheet: View {
                 }
             }
 
-            // 下载进度
+            // 下载进度（总进度：跨文件、跨分段聚合）
             if let d = s.msDownloading {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack {
@@ -1596,10 +1596,15 @@ struct MSFilesSheet: View {
                             .buttonStyle(.bordered).controlSize(.small).tint(T.bad)
                     }
                     ProgressView(value: d.total > 0 ? Double(d.received) / Double(d.total) : 0)
-                    Text(d.total > 0
-                         ? "\(fmt(d.received)) / \(fmt(d.total))"
-                         : "已下载 \(fmt(d.received))")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                    HStack {
+                        Text(d.total > 0
+                             ? "\(fmt(d.received)) / \(fmt(d.total))"
+                             : "已下载 \(fmt(d.received))")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                        Spacer()
+                        Text("多线程 · 并行下载")
+                            .font(.system(size: 11)).foregroundStyle(T.accent)
+                    }
                 }
                 .padding(.top, 4)
             }
@@ -1669,11 +1674,18 @@ struct MSFilesSheet: View {
                 }
             }
             Spacer()
-            let isThis = s.msDownloading?.path == f.path
+            let isThis = s.msFileProgress[f.path] != nil
             if f.isAux {
                 // 辅助文件不提供下载
             } else if isThis {
-                ProgressView().controlSize(.small)
+                // 该文件正在下载：显示其细分进度（含多线程分段的累计）
+                VStack(alignment: .trailing, spacing: 2) {
+                    ProgressView().controlSize(.small)
+                    if let p = s.msFileProgress[f.path], p.total > 0 {
+                        Text("\(pct(p.received, p.total))%")
+                            .font(.system(size: 10, design: .rounded)).foregroundStyle(.secondary)
+                    }
+                }
             } else {
                 Button("下载") { s.downloadMSFile(f) }
                     .buttonStyle(.bordered).controlSize(.small)
@@ -1681,6 +1693,11 @@ struct MSFilesSheet: View {
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+    }
+
+    func pct(_ r: Int64, _ t: Int64) -> String {
+        guard t > 0 else { return "0" }
+        return String(format: "%.0f", Double(r) / Double(t) * 100)
     }
 
     /// 点这个文件会配对的另一半是谁，直接标在文件行里。
@@ -1752,10 +1769,15 @@ struct HFFilesSheet: View {
                             .buttonStyle(.bordered).controlSize(.small).tint(T.bad)
                     }
                     ProgressView(value: d.total > 0 ? Double(d.received) / Double(d.total) : 0)
-                    Text(d.total > 0
-                         ? "\(fmt(d.received)) / \(fmt(d.total))"
-                         : "已下载 \(fmt(d.received))")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                    HStack {
+                        Text(d.total > 0
+                             ? "\(fmt(d.received)) / \(fmt(d.total))"
+                             : "已下载 \(fmt(d.received))")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                        Spacer()
+                        Text("多线程 · 并行下载")
+                            .font(.system(size: 11)).foregroundStyle(T.accent)
+                    }
                 }
                 .padding(.top, 4)
             }
@@ -1824,11 +1846,17 @@ struct HFFilesSheet: View {
                 }
             }
             Spacer()
-            let isThis = s.hfDownloading?.path == f.path
+            let isThis = s.hfFileProgress[f.path] != nil
             if f.isAux {
                 // 辅助文件不提供下载
             } else if isThis {
-                ProgressView().controlSize(.small)
+                VStack(alignment: .trailing, spacing: 2) {
+                    ProgressView().controlSize(.small)
+                    if let p = s.hfFileProgress[f.path], p.total > 0 {
+                        Text("\(pct(p.received, p.total))%")
+                            .font(.system(size: 10, design: .rounded)).foregroundStyle(.secondary)
+                    }
+                }
             } else {
                 Button("下载") { s.downloadHFFile(f) }
                     .buttonStyle(.bordered).controlSize(.small)
@@ -1836,6 +1864,11 @@ struct HFFilesSheet: View {
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+    }
+
+    func pct(_ r: Int64, _ t: Int64) -> String {
+        guard t > 0 else { return "0" }
+        return String(format: "%.0f", Double(r) / Double(t) * 100)
     }
 
     /// 点这个文件会配对的另一半是谁。

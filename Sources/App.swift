@@ -139,8 +139,10 @@ final class AppState: ObservableObject {
     /// 仓库文件列表（.gguf / .mmproj）
     @Published var msFiles: [MSFile] = []
     @Published var msFilesLoading = false
-    /// 正在下载的文件（含进度：已下载/总字节）
+    /// 正在下载的总进度（label 为描述、received/total 为跨文件跨分段的累计字节）
     @Published var msDownloading: (path: String, received: Int64, total: Int64)?
+    /// 每个文件各自的实时进度（filePath -> 已下载/总字节），用于文件行 spinner 与细粒度展示
+    @Published var msFileProgress: [String: (received: Int64, total: Int64)] = [:]
     @Published var msDownloaded: URL?
     /// 魔搭下载任务句柄（供取消用）
     private var msDownloadTask: Task<Void, Never>?
@@ -150,6 +152,8 @@ final class AppState: ObservableObject {
     @Published var hfFiles: [HFFile] = []
     @Published var hfFilesLoading = false
     @Published var hfDownloading: (path: String, received: Int64, total: Int64)?
+    /// 每个文件各自的实时进度（filePath -> 已下载/总字节）
+    @Published var hfFileProgress: [String: (received: Int64, total: Int64)] = [:]
     /// HF 下载任务句柄（供取消用）
     private var hfDownloadTask: Task<Void, Never>?
 
@@ -653,6 +657,7 @@ final class AppState: ObservableObject {
     }
 
     /// 应用内直下魔搭的某个 .gguf 文件，完成后自动解析并加入导入列表。
+    /// 多文件（两件套）并行下载，每个文件内部再按大小自动多线程分段，进度聚合到总进度条。
     func downloadMSFile(_ file: MSFile) {
         guard let listing = msListing else { return }
         // 下载中不并发：已有下载进行时，忽略新的点击（避免进度互相覆盖）
@@ -672,39 +677,75 @@ final class AppState: ObservableObject {
         let targetFiles = Self.pairFiles(files: msFiles, clicked: file)
 
         msDownloadTask = Task {
-            var downloaded: [URL] = []
-            for f in targetFiles {
-                if Task.isCancelled { break }
-                msDownloading = (path: f.path, received: 0, total: f.size)
-                do {
-                    let saved = try await MSDownload.download(
-                        org: listing.org, name: listing.name, filePath: f.path, to: dir
-                    ) { recv, total in
-                        Task { @MainActor in
-                            self.msDownloading = (path: f.path, received: recv, total: total)
-                        }
-                    }
-                    downloaded.append(saved)
-                } catch {
-                    if Task.isCancelled {
-                        break
-                    }
-                    await MainActor.run {
-                        self.msDownloading = nil
-                        self.toast = "下载失败：\(error.localizedDescription)"
-                    }
-                    return
+            let totalBytes = targetFiles.reduce(Int64(0)) { $0 + $1.size }
+            msDownloading = (path: "正在下载 \(targetFiles.count) 个文件", received: 0, total: totalBytes)
+            msFileProgress = Dictionary(uniqueKeysWithValues: targetFiles.map { ($0.path, (received: Int64(0), total: $0.size)) })
+
+            // 线程安全进度聚合（actor）。每个文件一个 key（用文件路径的哈希作索引）。
+            let meter = ProgressMeter(total: totalBytes) { sum, tot in
+                Task { @MainActor in
+                    self.msDownloading = (path: "正在下载 \(targetFiles.count) 个文件", received: sum, total: tot)
                 }
             }
+            // 文件名 -> meter key 的映射，供各文件 onProgress 回调定位
+            let keyOf: [String: Int] = Dictionary(uniqueKeysWithValues: targetFiles.enumerated().map { ($1.path, $0) })
+
+            // 并行下载所有文件（两件套同时下，而非顺序排队）
+            var results: [(MSFile, Result<URL, Error>)] = []
+            do {
+                try await withThrowingTaskGroup(of: (MSFile, Result<URL, Error>).self) { group in
+                    for f in targetFiles {
+                        group.addTask {
+                            let key = keyOf[f.path] ?? 0
+                            do {
+                                let saved = try await MSDownload.download(
+                                    org: listing.org, name: listing.name, filePath: f.path, to: dir
+                                ) { recv, total in
+                                    // 单文件进度 → 写细粒度进度 + 累加到总进度
+                                    Task { @MainActor in
+                                        self.msFileProgress[f.path] = (received: recv, total: total)
+                                    }
+                                    Task { await meter.report(key, received: recv) }
+                                }
+                                return (f, .success(saved))
+                            } catch {
+                                return (f, .failure(error))
+                            }
+                        }
+                    }
+                    for try await r in group {
+                        results.append(r)
+                    }
+                }
+            } catch {
+                // 组整体取消/抛出
+            }
+
+            // 结果汇总
+            let cancelled = Task.isCancelled
+            let failures = results.filter { if case .failure = $0.1 { return true }; return false }
+            let downloaded = results.compactMap { r -> URL? in
+                if case .success(let u) = r.1 { return u }; return nil
+            }
+
             await MainActor.run {
                 self.msDownloading = nil
+                self.msFileProgress = [:]
                 self.msDownloadTask = nil
-                if Task.isCancelled {
+                if cancelled {
                     self.toast = "已取消下载，已下完的部分保留"
                     return
                 }
+                if !failures.isEmpty {
+                    let msgs = failures.map { r -> String in
+                        if case .failure(let e) = r.1 { return "\(r.0.path): \(self.errText(e))" }
+                        return r.0.path
+                    }
+                    self.toast = "下载失败：\(msgs.joined(separator: "；"))"
+                    return
+                }
                 let names = downloaded.map { $0.path }
-                let extra = targetFiles.count > 1 ? "（含自动配对的 \(targetFiles.count) 个文件）" : ""
+                let extra = targetFiles.count > 1 ? "（已并行下载 \(targetFiles.count) 个文件）" : ""
                 self.toast = "已下载\(extra)，正在解析…"
                 // 一次性把主模型+投影器都传给 loadGGUF，由 assemble 自动配对成完整多模态模型
                 self.loadGGUF(paths: names)
@@ -712,11 +753,16 @@ final class AppState: ObservableObject {
         }
     }
 
+    private func errText(_ e: Error) -> String {
+        (e as? CancellationError) != nil ? "已取消" : e.localizedDescription
+    }
+
     /// 取消魔搭应用内直下（已下载部分保留，可重新下载续传）。
     func cancelMSDownload() {
         msDownloadTask?.cancel()
         msDownloadTask = nil
         msDownloading = nil
+        msFileProgress = [:]
         toast = "已请求取消下载"
     }
 
@@ -785,41 +831,75 @@ final class AppState: ObservableObject {
         let targetFiles = Self.pairHFFiles(files: hfFiles, clicked: file)
 
         hfDownloadTask = Task {
-            var downloaded: [URL] = []
-            for f in targetFiles {
-                if Task.isCancelled { break }
-                guard let url = f.downloadURL(modelId: listing.modelId) else {
-                    await MainActor.run { self.toast = "下载地址无效：\(f.path)" }
-                    continue
-                }
-                hfDownloading = (path: f.path, received: 0, total: Int64(f.size))
-                do {
-                    let saved = try await MSDownload.download(
-                        url: url, saveName: (f.path as NSString).lastPathComponent, to: dir
-                    ) { recv, total in
-                        Task { @MainActor in
-                            self.hfDownloading = (path: f.path, received: recv, total: total)
-                        }
-                    }
-                    downloaded.append(saved)
-                } catch {
-                    if Task.isCancelled { break }
-                    await MainActor.run {
-                        self.hfDownloading = nil
-                        self.toast = "下载失败：\(error.localizedDescription)"
-                    }
-                    return
+            let totalBytes = targetFiles.reduce(Int64(0)) { $0 + Int64($1.size) }
+            hfDownloading = (path: "正在下载 \(targetFiles.count) 个文件", received: 0, total: totalBytes)
+            hfFileProgress = Dictionary(uniqueKeysWithValues: targetFiles.map { ($0.path, (received: Int64(0), total: Int64($0.size))) })
+
+            let meter = ProgressMeter(total: totalBytes) { sum, tot in
+                Task { @MainActor in
+                    self.hfDownloading = (path: "正在下载 \(targetFiles.count) 个文件", received: sum, total: tot)
                 }
             }
+            let keyOf: [String: Int] = Dictionary(uniqueKeysWithValues: targetFiles.enumerated().map { ($1.path, $0) })
+
+            // 并行下载所有文件
+            var results: [(HFFile, Result<URL, Error>)] = []
+            do {
+                try await withThrowingTaskGroup(of: (HFFile, Result<URL, Error>).self) { group in
+                    for f in targetFiles {
+                        guard let url = f.downloadURL(modelId: listing.modelId) else {
+                            await MainActor.run { self.toast = "下载地址无效：\(f.path)" }
+                            continue
+                        }
+                        group.addTask {
+                            let key = keyOf[f.path] ?? 0
+                            do {
+                                let saved = try await MSDownload.download(
+                                    url: url, saveName: (f.path as NSString).lastPathComponent, to: dir
+                                ) { recv, total in
+                                    Task { @MainActor in
+                                        self.hfFileProgress[f.path] = (received: recv, total: total)
+                                    }
+                                    Task { await meter.report(key, received: recv) }
+                                }
+                                return (f, .success(saved))
+                            } catch {
+                                return (f, .failure(error))
+                            }
+                        }
+                    }
+                    for try await r in group {
+                        results.append(r)
+                    }
+                }
+            } catch {
+                // 组整体取消/抛出
+            }
+
+            let cancelled = Task.isCancelled
+            let failures = results.filter { if case .failure = $0.1 { return true }; return false }
+            let downloaded = results.compactMap { r -> URL? in
+                if case .success(let u) = r.1 { return u }; return nil
+            }
+
             await MainActor.run {
                 self.hfDownloading = nil
+                self.hfFileProgress = [:]
                 self.hfDownloadTask = nil
-                if Task.isCancelled {
+                if cancelled {
                     self.toast = "已取消下载，已下完的部分保留"
                     return
                 }
+                if !failures.isEmpty {
+                    let msgs = failures.map { r -> String in
+                        if case .failure(let e) = r.1 { return "\(r.0.path): \(self.errText(e))" }
+                        return r.0.path
+                    }
+                    self.toast = "下载失败：\(msgs.joined(separator: "；"))"
+                    return
+                }
                 let names = downloaded.map { $0.path }
-                let extra = targetFiles.count > 1 ? "（含自动配对的 \(targetFiles.count) 个文件）" : ""
+                let extra = targetFiles.count > 1 ? "（已并行下载 \(targetFiles.count) 个文件）" : ""
                 self.toast = "已下载\(extra)，正在解析…"
                 self.loadGGUF(paths: names)
             }
@@ -831,6 +911,7 @@ final class AppState: ObservableObject {
         hfDownloadTask?.cancel()
         hfDownloadTask = nil
         hfDownloading = nil
+        hfFileProgress = [:]
         toast = "已请求取消下载"
     }
 
