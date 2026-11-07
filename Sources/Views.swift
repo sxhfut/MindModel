@@ -291,7 +291,7 @@ struct Header: View {
         case .recommend: return "上下文 \(s.contextTokens / 1024)K 下的适配判定与速度估算"
         case .task: return "按你的角色与具体任务，在跑得动的模型里挑最合用的"
         case .installed: return "检测本机推理引擎与已下载模型"
-        case .online: return "搜索 HuggingFace 的 GGUF 模型，清单外也能找"
+        case .online: return "魔搭 + HuggingFace 镜像双源搜索，清单外的模型也能找"
         case .importGGUF: return "任意 .gguf 均可导入，无模型白名单"
         case .bench: return "跳过估算，直接让 Ollama 跑一次"
         case .chat: return "用装好的模型直接对话，可带图片"
@@ -1461,18 +1461,25 @@ struct OnlineModelsView: View {
                         }
                         Label("评估上下文 \(s.contextTokens / 1024)K", systemImage: "text.alignleft")
                             .font(.system(size: 11)).foregroundStyle(.secondary)
-                        if s.benchmarks.count >= 2 {
+                        let cal = s.fitCalibration
+                        if cal.active {
                             Label(String(format: "估算已按 %d 条实测校准 ×%.2f",
-                                         s.benchmarks.count, s.calibrationFactor),
+                                         cal.used, cal.factor),
                                   systemImage: "slider.horizontal.3")
                                 .font(.system(size: 11))
-                                .foregroundStyle(s.calibrationFactor < 0.9 ? T.warn : .secondary)
-                                .help("公式系数是按公开实测反推的。本机实测与公式有系统性偏差时，用中位比值整体缩放；超过 2 条实测才启用")
+                                .foregroundStyle(cal.factor < 0.9 ? T.warn : .secondary)
+                                .help("公式系数按公开实测反推；这里用本机实测与公式的中位比值整体缩放。显示的条数是真正参与计算的实测数（名字里要有参数量、且能匹配到内置清单），不是记录总数")
+                        } else if !s.benchmarks.isEmpty {
+                            Label(String(format: "有 %d 条实测，校准未启用", s.benchmarks.count),
+                                  systemImage: "slider.horizontal.3")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                                .help("至少需要 2 条能算出「实测/公式」比值的记录：实测的模型名里要有参数量，且能匹配到内置清单。同款模型仍会直接显示实测值，不受影响")
                         }
                         Spacer()
                     }
                     .help("每个模型下方的「适配/性能」都按这台机器的可用内存、实测带宽和当前上下文估算")
-                    Text("「仅 GGUF」是本应用能直接导入 Ollama 用的格式；「全部格式」还会列出 safetensors 等原始权重（仅供了解，需转换后才能用）。魔搭直连即可，HuggingFace 源需能访问 huggingface.co 的网络。")
+                    Text("「仅 GGUF」是本应用能直接导入 Ollama 用的格式；「全部格式」还会列出 safetensors 等原始权重（仅供了解，需转换后才能用）。两个源独立容错：魔搭直连即可；HuggingFace 源默认走 hf-mirror.com 镜像（可用 HF_ENDPOINT 覆盖），国内网络一般无需额外配置。")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                     Text("每个模型下方那行「适配 / tok/s」是按本机可用内存、实测带宽和当前上下文算的：内存档位看「需多少 GB 占预算多少」，速度档位看 tok/s（≥25 跟手，12–25 可用，6–12 偏慢，<6 很慢）。名字里没写参数量的模型无法估算。误差约 ±30%，下载后实测最准。")
                         .font(.system(size: 12)).foregroundStyle(.secondary)

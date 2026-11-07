@@ -453,8 +453,8 @@ final class AppState: ObservableObject {
     /// 实测记录只暴露成 [模型名: tok/s] 给推荐引擎，历史细节留在 benchRecords 里
     var benchmarks: [String: Double] { benchRecords.mapValues { $0.tps } }
 
-    /// 估算公式的本机自校准系数（无实测或实测不足 2 条时为 1.0）
-    var calibrationFactor: Double {
+    /// 估算公式的本机自校准状态（含真正生效的实测条数，供 UI 如实显示）
+    var fitCalibration: FitCalibration {
         OnlineFitEngine.calibration(benchmarks: benchmarks, bandwidth: bandwidth ?? 0)
     }
 

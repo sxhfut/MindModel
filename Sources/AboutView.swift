@@ -55,7 +55,7 @@ struct AboutView: View {
                         Text("MindModel").font(.system(size: 22, weight: .bold, design: .rounded))
                         Text("本机大模型选型顾问 · 免费 · 开源 · 可离线")
                             .font(.system(size: 13)).foregroundStyle(.secondary)
-                        Text("所有计算在本机完成，没有遥测、没有云端上传。")
+                        Text("选型计算全在本机，不上传任何本机数据；仅主动搜索/下载在线模型时联网。")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                         Text("版本 \(LabInfo.version) · 许可 \(LabInfo.license)")
                             .font(.system(size: 11, design: .monospaced))

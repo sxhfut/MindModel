@@ -116,6 +116,15 @@ struct OnlineFit {
 }
 
 /// 在线模型适配评估引擎。纯函数，无状态。
+/// 自校准结果。`used` 是**真正参与中位数计算**的实测条数，
+/// 不是 `benchmarks.count`——实测 tag 里没参数量、或匹配不到内置清单的都进不来。
+/// UI 必须显示 used，否则会出现「已按 5 条实测校准」其实只有 1 条生效的假账。
+struct FitCalibration {
+    let factor: Double
+    let used: Int
+    var active: Bool { used >= 2 }
+}
+
 enum OnlineFitEngine {
 
     /// 评估上下文默认使用调用方传入（通常是应用的 contextTokens）。
@@ -209,8 +218,8 @@ enum OnlineFitEngine {
     /// 关键：这里的 `raw` 必须与 `evaluate` 里的公式**同底**（含 dense/MoE 效率系数）。
     /// 早先版本拿旧的 0.45 常量算基线，得到的比值会系统性地差 2–2.5 倍，
     /// 再乘回新公式等于把误差叠了两遍——只有 0 条实测时才碰巧没暴露。
-    static func calibration(benchmarks: [String: Double], bandwidth: Double) -> Double {
-        guard benchmarks.count >= 2 else { return 1.0 }
+    static func calibration(benchmarks: [String: Double], bandwidth: Double) -> FitCalibration {
+        guard benchmarks.count >= 2 else { return FitCalibration(factor: 1.0, used: 0) }
         let bw = bandwidth > 1 ? bandwidth : 400.0
         var ratios: [Double] = []
         for (tag, real) in benchmarks {
@@ -225,11 +234,11 @@ enum OnlineFitEngine {
             guard raw > 1 else { continue }
             ratios.append(real / raw)
         }
-        guard ratios.count >= 2 else { return 1.0 }
+        guard ratios.count >= 2 else { return FitCalibration(factor: 1.0, used: ratios.count) }
         ratios.sort()
         let med = ratios[ratios.count / 2]
         // 夹在合理区间，避免个别异常实测把全局估算带飞
-        return min(1.6, max(0.55, med))
+        return FitCalibration(factor: min(1.6, max(0.55, med)), used: ratios.count)
     }
 
     // MARK: - 实测记录的复用
@@ -372,7 +381,7 @@ enum OnlineFitEngine {
         let share = min(1.0, max(0.02, activeB / max(1.0, paramsB)))
         let bytesPerToken = wGB * share + 0.25
         let bw = bandwidth > 1 ? bandwidth : 400.0
-        let cal = calibration(benchmarks: benchmarks, bandwidth: bandwidth)
+        let cal = calibration(benchmarks: benchmarks, bandwidth: bandwidth).factor
         let dense = activeB >= paramsB * 0.95
         let tps = min(260.0, max(0.4, bw * efficiency(dense: dense) / max(0.3, bytesPerToken) * cal))
         // 本机测过同款就直接报实测值——估算再准也不如自己的数
