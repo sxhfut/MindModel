@@ -36,6 +36,33 @@ struct ImportItem: Identifiable {
     var status: ImportStatus = .idle
 }
 
+/// 下载速度/剩余时间估算器。喂入 (已下载字节, 总字节) 样本，用滑动窗口算实时速度与 ETA。
+/// 纯值类型，AppState 持有并在每次进度回调里 update，避免频繁刷新整份 UI。
+struct SpeedTracker {
+    private struct Sample { let t: TimeInterval; let bytes: Int64 }
+    private var samples: [Sample] = []
+    private let window: TimeInterval = 5.0   // 只看最近 5 秒
+    private let maxSamples = 40
+
+    mutating func update(received: Int64, total: Int64) -> (bytesPerSec: Double, etaSeconds: Double)? {
+        let now = Date().timeIntervalSince1970
+        samples.append(Sample(t: now, bytes: received))
+        // 淘汰过旧样本
+        while samples.count > maxSamples || (samples.first.map { now - $0.t > window } ?? false) {
+            samples.removeFirst()
+        }
+        guard samples.count >= 2, let first = samples.first, let last = samples.last else { return nil }
+        let dt = last.t - first.t
+        guard dt > 0.2 else { return nil }
+        let speed = Double(last.bytes - first.bytes) / dt
+        let remaining = total - received
+        let eta = speed > 0 ? Double(remaining) / speed : 0
+        return (bytesPerSec: speed, etaSeconds: eta)
+    }
+
+    mutating func reset() { samples.removeAll() }
+}
+
 @MainActor
 final class AppState: ObservableObject {
     enum Tab: String, CaseIterable, Identifiable {
@@ -158,6 +185,16 @@ final class AppState: ObservableObject {
     private var hfDownloadTask: Task<Void, Never>?
     /// 磁盘上「未完成/可续传」的下载记录（启动时加载，用于断点续传提示）
     @Published var resumeRecords: [DownloadRecord] = []
+    /// 已完成下载的历史清单
+    @Published var downloadHistory: [HistoryRecord] = []
+    /// 并发分段数（持久化到 UserDefaults，可在设置里调）
+    @Published var downloadSegments: Int = 8 { didSet { saveDownloadSegments() } }
+    /// 是否暂停当前下载（区分「暂停」与「取消」）
+    @Published var downloadPaused = false
+    /// 实时速度（字节/秒）与预计剩余时间（秒），由进度回调的滑动窗口估算
+    @Published var downloadSpeed: (bytesPerSec: Double, etaSeconds: Double)?
+    /// 速度估算器（非 @Published，纯内部计算）
+    private var speedTracker = SpeedTracker()
 
     // 模型仓库
     @Published var disk = DiskScan()
@@ -210,6 +247,32 @@ final class AppState: ObservableObject {
         loadBench()
         loadLctx()
         refreshResumeRecords()
+        refreshDownloadHistory()
+        downloadSegments = UserDefaults.standard.integer(forKey: "mm.segments") == 0
+            ? 8 : UserDefaults.standard.integer(forKey: "mm.segments")
+        MSDownload.segmentCount = downloadSegments
+    }
+
+    private func saveDownloadSegments() {
+        UserDefaults.standard.set(downloadSegments, forKey: "mm.segments")
+        MSDownload.segmentCount = downloadSegments
+    }
+
+    /// 喂入总进度样本，更新速度与 ETA。
+    private func updateSpeed(received: Int64, total: Int64) {
+        if let r = speedTracker.update(received: received, total: total) {
+            downloadSpeed = r
+        }
+    }
+
+    private func resetSpeed() {
+        speedTracker.reset()
+        downloadSpeed = nil
+    }
+
+    /// 刷新已完成下载的历史清单。
+    func refreshDownloadHistory() {
+        downloadHistory = HistoryStore.load()
     }
 
     /// 刷新「可续传」下载记录：读持久化记录，筛掉已完整下载（或文件已不存在）的，保留半截的。
@@ -236,22 +299,34 @@ final class AppState: ObservableObject {
                 let saved = try await MSDownload.download(url: url, saveName: rec.fileName, to: dir) { recv, tot in
                     Task { @MainActor in
                         self.msDownloading = (path: "续传 \(rec.fileName)", received: recv, total: tot)
+                        self.updateSpeed(received: recv, total: tot)
                     }
                 }
+                // 完成后校验 + 写历史
+                var verifyMsg = ""
+                if let ok = MSDownload.verify(saved, sha256: rec.sha256), !ok {
+                    verifyMsg = "；SHA256 校验失败，文件可能损坏"
+                }
+                HistoryStore.upsert(HistoryRecord(
+                    fileName: rec.fileName, source: rec.source, totalSize: rec.totalSize,
+                    sha256: rec.sha256, completedAt: Int64(Date().timeIntervalSince1970)))
                 await MainActor.run {
                     self.msDownloading = nil
+                    self.resetSpeed()
                     DownloadStore.remove(rec.fileName)
                     self.refreshResumeRecords()
-                    self.toast = "已续传完成 \(rec.fileName)，正在解析…"
+                    self.refreshDownloadHistory()
+                    self.toast = "已续传完成 \(rec.fileName)，正在解析…\(verifyMsg)"
                     self.loadGGUF(paths: [saved.path])
                 }
             } catch {
                 if Task.isCancelled {
-                    await MainActor.run { self.msDownloading = nil; self.toast = "已取消续传，已下部分保留" }
+                    await MainActor.run { self.msDownloading = nil; self.resetSpeed(); self.toast = "已取消续传，已下部分保留" }
                     return
                 }
                 await MainActor.run {
                     self.msDownloading = nil
+                    self.resetSpeed()
                     self.toast = "续传失败：\(error.localizedDescription)"
                 }
             }
@@ -265,6 +340,14 @@ final class AppState: ObservableObject {
         DownloadStore.remove(rec.fileName)
         refreshResumeRecords()
         toast = "已删除半截文件 \(rec.fileName)"
+    }
+
+    /// 删除一条已完成下载的历史记录（及其磁盘文件）。
+    func discardHistory(_ rec: HistoryRecord) {
+        try? FileManager.default.removeItem(at: rec.localPath)
+        HistoryStore.remove(rec.fileName)
+        refreshDownloadHistory()
+        toast = "已删除 \(rec.fileName)"
     }
 
     /// 实测记录只暴露成 [模型名: tok/s] 给推荐引擎，历史细节留在 benchRecords 里
@@ -745,7 +828,8 @@ final class AppState: ObservableObject {
                     DownloadStore.upsert(DownloadRecord(
                         fileName: (f.path as NSString).lastPathComponent,
                         remoteURL: u.absoluteString, totalSize: f.size,
-                        source: "ms", createdAt: Int64(Date().timeIntervalSince1970)))
+                        source: "ms", createdAt: Int64(Date().timeIntervalSince1970),
+                        sha256: f.sha256))
                 }
             }
 
@@ -753,6 +837,7 @@ final class AppState: ObservableObject {
             let meter = ProgressMeter(total: totalBytes) { sum, tot in
                 Task { @MainActor in
                     self.msDownloading = (path: "正在下载 \(targetFiles.count) 个文件", received: sum, total: tot)
+                    self.updateSpeed(received: sum, total: tot)
                 }
             }
             // 文件名 -> meter key 的映射，供各文件 onProgress 回调定位
@@ -796,10 +881,32 @@ final class AppState: ObservableObject {
                 if case .success(let u) = r.1 { return u }; return nil
             }
 
+            // 下载成功 → 后台做 SHA256 校验（大文件，不阻塞主线程），并准备历史记录
+            var verifyResults: [String: String] = [:]   // fileName -> 校验结果文案（空=通过/无法校验）
+            if !cancelled && failures.isEmpty {
+                for r in results {
+                    guard case .success(let url) = r.1 else { continue }
+                    let expected = r.0.sha256
+                    if let ok = MSDownload.verify(url, sha256: expected) {
+                        if !ok {
+                            verifyResults[r.0.path] = "SHA256 校验失败，文件可能损坏"
+                        }
+                    }
+                    // 写历史记录
+                    let rec = HistoryRecord(
+                        fileName: url.lastPathComponent,
+                        source: "ms", totalSize: r.0.size,
+                        sha256: expected,
+                        completedAt: Int64(Date().timeIntervalSince1970))
+                    HistoryStore.upsert(rec)
+                }
+            }
+
             await MainActor.run {
                 self.msDownloading = nil
                 self.msFileProgress = [:]
                 self.msDownloadTask = nil
+                self.resetSpeed()
                 if cancelled {
                     self.toast = "已取消下载，已下完的部分保留（可续传）"
                     self.refreshResumeRecords()
@@ -819,9 +926,11 @@ final class AppState: ObservableObject {
                     DownloadStore.remove((f.path as NSString).lastPathComponent)
                 }
                 self.refreshResumeRecords()
+                self.refreshDownloadHistory()
                 let names = downloaded.map { $0.path }
                 let extra = targetFiles.count > 1 ? "（已并行下载 \(targetFiles.count) 个文件）" : ""
-                self.toast = "已下载\(extra)，正在解析…"
+                let verifyMsg = verifyResults.isEmpty ? "" : "；" + verifyResults.values.joined(separator: "；")
+                self.toast = "已下载\(extra)，正在解析…\(verifyMsg)"
                 // 一次性把主模型+投影器都传给 loadGGUF，由 assemble 自动配对成完整多模态模型
                 self.loadGGUF(paths: names)
             }
@@ -840,6 +949,36 @@ final class AppState: ObservableObject {
         msFileProgress = [:]
         refreshResumeRecords()
         toast = "已请求取消下载，已下部分保留，可续传"
+    }
+
+    /// 暂停当前下载（保留半截文件与记录，可随时恢复续传）。
+    func pauseDownload() {
+        downloadPaused = true
+        msDownloadTask?.cancel()
+        msDownloadTask = nil
+        hfDownloadTask?.cancel()
+        hfDownloadTask = nil
+        msDownloading = nil
+        hfDownloading = nil
+        msFileProgress = [:]
+        hfFileProgress = [:]
+        resetSpeed()
+        refreshResumeRecords()
+        toast = "已暂停下载，可稍后从断点恢复"
+    }
+
+    /// 恢复下载：恢复 resumeRecords 里的全部未完成任务（逐个续传）。
+    func resumeAllDownloads() {
+        downloadPaused = false
+        let records = resumeRecords
+        guard !records.isEmpty else {
+            toast = "没有可恢复的下载"
+            return
+        }
+        for rec in records {
+            resumeDownload(rec)
+        }
+        toast = "已恢复 \(records.count) 个下载"
     }
 
     /// 配对决策：返回最终要下载的文件列表（已按「主模型在前、投影器在后」排序）。
@@ -917,13 +1056,15 @@ final class AppState: ObservableObject {
                     DownloadStore.upsert(DownloadRecord(
                         fileName: (f.path as NSString).lastPathComponent,
                         remoteURL: u.absoluteString, totalSize: Int64(f.size),
-                        source: "hf", createdAt: Int64(Date().timeIntervalSince1970)))
+                        source: "hf", createdAt: Int64(Date().timeIntervalSince1970),
+                        sha256: f.sha256))
                 }
             }
 
             let meter = ProgressMeter(total: totalBytes) { sum, tot in
                 Task { @MainActor in
                     self.hfDownloading = (path: "正在下载 \(targetFiles.count) 个文件", received: sum, total: tot)
+                    self.updateSpeed(received: sum, total: tot)
                 }
             }
             let keyOf: [String: Int] = Dictionary(uniqueKeysWithValues: targetFiles.enumerated().map { ($1.path, $0) })
@@ -968,10 +1109,28 @@ final class AppState: ObservableObject {
                 if case .success(let u) = r.1 { return u }; return nil
             }
 
+            // 下载成功 → 后台做 SHA256 校验 + 写历史
+            var verifyResults: [String: String] = [:]
+            if !cancelled && failures.isEmpty {
+                for r in results {
+                    guard case .success(let url) = r.1 else { continue }
+                    let expected = r.0.sha256
+                    if let ok = MSDownload.verify(url, sha256: expected), !ok {
+                        verifyResults[r.0.path] = "SHA256 校验失败，文件可能损坏"
+                    }
+                    HistoryStore.upsert(HistoryRecord(
+                        fileName: url.lastPathComponent,
+                        source: "hf", totalSize: Int64(r.0.size),
+                        sha256: expected,
+                        completedAt: Int64(Date().timeIntervalSince1970)))
+                }
+            }
+
             await MainActor.run {
                 self.hfDownloading = nil
                 self.hfFileProgress = [:]
                 self.hfDownloadTask = nil
+                self.resetSpeed()
                 if cancelled {
                     self.toast = "已取消下载，已下完的部分保留（可续传）"
                     self.refreshResumeRecords()
@@ -990,9 +1149,11 @@ final class AppState: ObservableObject {
                     DownloadStore.remove((f.path as NSString).lastPathComponent)
                 }
                 self.refreshResumeRecords()
+                self.refreshDownloadHistory()
                 let names = downloaded.map { $0.path }
                 let extra = targetFiles.count > 1 ? "（已并行下载 \(targetFiles.count) 个文件）" : ""
-                self.toast = "已下载\(extra)，正在解析…"
+                let verifyMsg = verifyResults.isEmpty ? "" : "；" + verifyResults.values.joined(separator: "；")
+                self.toast = "已下载\(extra)，正在解析…\(verifyMsg)"
                 self.loadGGUF(paths: names)
             }
         }

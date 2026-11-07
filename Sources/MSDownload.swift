@@ -1,4 +1,5 @@
 import Foundation
+import CommonCrypto
 
 // MARK: - 魔搭（ModelScope）模型文件列表与直链下载
 //
@@ -388,6 +389,44 @@ enum MSDownload {
             return error
         }
     }
+
+    /// 计算文件的 SHA256（流式分块，避免大文件整读进内存）。
+    static func sha256(of url: URL) -> String? {
+        guard let fh = FileHandle(forReadingAtPath: url.path) else { return nil }
+        defer { try? fh.close() }
+        let hasher = SHA256Hasher()
+        while true {
+            let chunk = fh.readData(ofLength: 8 * 1_048_576)
+            if chunk.isEmpty { break }
+            hasher.update(chunk)
+        }
+        return hasher.finalHex()
+    }
+
+    /// 校验文件 sha256 是否与期望一致（大小写不敏感）。期望为空时视为「无法校验」返回 nil。
+    static func verify(_ url: URL, sha256 expected: String?) -> Bool? {
+        guard let expected, !expected.isEmpty else { return nil }
+        guard let actual = sha256(of: url) else { return nil }
+        return actual.lowercased() == expected.lowercased()
+    }
+}
+
+/// 极简 SHA256 实现（用 CommonCrypto）。分块 update，避免大文件整读。
+final class SHA256Hasher {
+    private var ctx = CC_SHA256_CTX()
+    init() { CC_SHA256_Init(&ctx) }
+    func update(_ data: Data) {
+        data.withUnsafeBytes { buf in
+            _ = CC_SHA256_Update(&ctx, buf.baseAddress, CC_LONG(data.count))
+        }
+    }
+    func finalHex() -> String {
+        var digest = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+        digest.withUnsafeMutableBytes { buf in
+            _ = CC_SHA256_Final(buf.bindMemory(to: UInt8.self).baseAddress, &ctx)
+        }
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
 }
 
 // MARK: - 下载记录持久化（断点续传）
@@ -406,6 +445,8 @@ struct DownloadRecord: Codable, Identifiable, Equatable {
     let source: String
     /// 创建时间戳（Unix 秒）
     let createdAt: Int64
+    /// 期望的 sha256（可选，用于下载完成后校验完整性）
+    let sha256: String?
 
     /// 磁盘上已下载的字节数（含 .parts 分片累计），由检测函数实时计算，不持久化
     var downloadedBytes: Int64 {
@@ -477,6 +518,53 @@ enum DownloadStore {
     }
 
     static func upsert(_ rec: DownloadRecord) {
+        var list = load()
+        list.removeAll { $0.id == rec.id }
+        list.append(rec)
+        save(list)
+    }
+
+    static func remove(_ fileName: String) {
+        var list = load()
+        list.removeAll { $0.id == fileName }
+        save(list)
+    }
+}
+
+// MARK: - 下载历史（已完成下载的清单）
+
+/// 一次已完成的下载（历史记录）。用于「下载历史」清单，支持复用/删除。
+struct HistoryRecord: Codable, Identifiable, Equatable {
+    var id: String { fileName }
+    let fileName: String
+    let source: String        // ms / hf
+    let totalSize: Int64
+    let sha256: String?       // 校验后的实际哈希（若有）
+    let completedAt: Int64    // Unix 秒
+    var localPath: URL { DownloadRecord.downloadDir.appendingPathComponent(fileName) }
+    var exists: Bool { FileManager.default.fileExists(atPath: localPath.path) }
+    var sizeText: String {
+        let gb = Double(totalSize) / 1_073_741_824.0
+        if gb >= 1 { return String(format: "%.1f GB", gb) }
+        return String(format: "%.0f MB", Double(totalSize) / 1_048_576.0)
+    }
+}
+
+enum HistoryStore {
+    static let key = "mm.history"
+
+    static func load() -> [HistoryRecord] {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let list = try? JSONDecoder().decode([HistoryRecord].self, from: data) else { return [] }
+        return list
+    }
+
+    static func save(_ list: [HistoryRecord]) {
+        guard let data = try? JSONEncoder().encode(list) else { return }
+        UserDefaults.standard.set(data, forKey: key)
+    }
+
+    static func upsert(_ rec: HistoryRecord) {
         var list = load()
         list.removeAll { $0.id == rec.id }
         list.append(rec)

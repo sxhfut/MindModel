@@ -100,6 +100,29 @@ struct HFFile: Codable, Identifiable {
     let type: String
     var id: String { path }
 
+    /// LFS 的 sha256（HF 上 GGUF 通常走 LFS，oid 即文件内容的 sha256）
+    var sha256: String? {
+        lfs?.oid
+    }
+    private let lfs: LFS?
+
+    struct LFS: Codable {
+        let oid: String
+        let size: Int
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case path, size, type, lfs
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        path = try c.decode(String.self, forKey: .path)
+        size = try c.decodeIfPresent(Int.self, forKey: .size) ?? 0
+        type = try c.decodeIfPresent(String.self, forKey: .type) ?? "file"
+        lfs = try c.decodeIfPresent(LFS.self, forKey: .lfs)
+    }
+
     var sizeGB: String {
         let gb = Double(size) / 1_073_741_824.0
         if gb >= 1 { return String(format: "%.1f GB", gb) }

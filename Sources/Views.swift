@@ -1381,6 +1381,15 @@ struct OnlineModelsView: View {
                         sourceChip("魔搭 ModelScope", 1, s.msResults.count)
                         sourceChip("HuggingFace", 0, s.hfResults.count)
                         Spacer()
+                        // 多线程并发段数设置
+                        HStack(spacing: 6) {
+                            Text("并发分段").font(.system(size: 12)).foregroundStyle(.secondary)
+                            Stepper(value: $s.downloadSegments, in: 1...32) {
+                                Text("\(s.downloadSegments)").font(.system(size: 12, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(T.accent)
+                            }
+                            .frame(maxWidth: 150)
+                        }
                     }
                     if s.hfSearching {
                         HStack(spacing: 7) {
@@ -1398,6 +1407,10 @@ struct OnlineModelsView: View {
 
             if !s.resumeRecords.isEmpty {
                 resumeSection
+            }
+
+            if !s.downloadHistory.isEmpty {
+                historySection
             }
 
             if s.searchSource == 1 {
@@ -1431,6 +1444,13 @@ struct OnlineModelsView: View {
         VStack(alignment: .leading, spacing: 8) {
             SectionHead(title: "续传下载（\(s.resumeRecords.count) 个未完成）",
                         sub: "上次中断/取消的下载，已保留部分。点「继续」从断点接着下。")
+            if s.resumeRecords.count > 1 {
+                HStack {
+                    Button("全部恢复") { s.resumeAllDownloads() }
+                        .buttonStyle(.borderedProminent).controlSize(.small)
+                    Spacer()
+                }
+            }
             ForEach(s.resumeRecords) { rec in
                 Card(pad: 11) {
                     HStack(spacing: 12) {
@@ -1452,6 +1472,47 @@ struct OnlineModelsView: View {
                         Button("继续") { s.resumeDownload(rec) }
                             .buttonStyle(.borderedProminent).controlSize(.small)
                         Button("删除") { s.discardDownload(rec) }
+                            .buttonStyle(.bordered).controlSize(.small).tint(T.bad)
+                    }
+                }
+            }
+        }
+    }
+
+    /// 下载历史区：已完成下载的清单，可复用（重新导入）或删除。
+    var historySection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionHead(title: "下载历史（\(s.downloadHistory.count) 个已完成）",
+                        sub: "已完成下载的模型文件。可重新导入，或删除释放空间。")
+            ForEach(s.downloadHistory) { rec in
+                Card(pad: 11) {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(rec.fileName).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                            HStack(spacing: 6) {
+                                Badge(text: rec.source == "ms" ? "魔搭" : "HF", color: .secondary)
+                                Text(rec.sizeText).font(.system(size: 11)).foregroundStyle(.secondary)
+                                if rec.exists {
+                                    if rec.sha256 != nil {
+                                        Label("已校验", systemImage: "checkmark.seal.fill")
+                                            .font(.system(size: 11)).foregroundStyle(T.good)
+                                    }
+                                } else {
+                                    Label("文件已不在", systemImage: "exclamationmark.triangle")
+                                        .font(.system(size: 11)).foregroundStyle(T.warn)
+                                }
+                            }
+                        }
+                        Spacer()
+                        if rec.exists {
+                            Button("重新导入") {
+                                if FileManager.default.fileExists(atPath: rec.localPath.path) {
+                                    s.loadGGUF(paths: [rec.localPath.path])
+                                }
+                            }
+                            .buttonStyle(.bordered).controlSize(.small)
+                        }
+                        Button("删除") { s.discardHistory(rec) }
                             .buttonStyle(.bordered).controlSize(.small).tint(T.bad)
                     }
                 }
@@ -1635,7 +1696,9 @@ struct MSFilesSheet: View {
                     HStack {
                         Text(d.path).font(.system(size: 12, weight: .medium)).lineLimit(1)
                         Spacer()
-                        Button("取消下载") { s.cancelMSDownload() }
+                        Button("暂停") { s.pauseDownload() }
+                            .buttonStyle(.bordered).controlSize(.small).tint(T.warn)
+                        Button("取消") { s.cancelMSDownload() }
                             .buttonStyle(.bordered).controlSize(.small).tint(T.bad)
                     }
                     ProgressView(value: d.total > 0 ? Double(d.received) / Double(d.total) : 0)
@@ -1644,8 +1707,12 @@ struct MSFilesSheet: View {
                              ? "\(fmt(d.received)) / \(fmt(d.total))"
                              : "已下载 \(fmt(d.received))")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
+                        if let sp = s.downloadSpeed, sp.bytesPerSec > 0 {
+                            Text("· \(fmtSpeed(sp.bytesPerSec)) · 剩余 \(fmtEta(sp.etaSeconds))")
+                                .font(.system(size: 11)).foregroundStyle(.secondary)
+                        }
                         Spacer()
-                        Text("多线程 · 并行下载")
+                        Text("多线程 \(s.downloadSegments) 段 · 并行下载")
                             .font(.system(size: 11)).foregroundStyle(T.accent)
                     }
                 }
@@ -1654,6 +1721,17 @@ struct MSFilesSheet: View {
         }
         .padding(18)
         .frame(width: 560, height: 460)
+    }
+
+    func fmtSpeed(_ b: Double) -> String {
+        if b >= 1_048_576 { return String(format: "%.1f MB/s", b / 1_048_576) }
+        return String(format: "%.0f KB/s", b / 1024)
+    }
+
+    func fmtEta(_ s: Double) -> String {
+        if s >= 3600 { return String(format: "%.1f 小时", s / 3600) }
+        if s >= 60 { return String(format: "%.0f 分钟", s / 60) }
+        return String(format: "%.0f 秒", s)
     }
 
     /// 配对关系说明：明确告诉用户「哪个投影器配哪个主模型」，一眼看清多模态两件套。
@@ -1808,7 +1886,9 @@ struct HFFilesSheet: View {
                     HStack {
                         Text(d.path).font(.system(size: 12, weight: .medium)).lineLimit(1)
                         Spacer()
-                        Button("取消下载") { s.cancelHFDownload() }
+                        Button("暂停") { s.pauseDownload() }
+                            .buttonStyle(.bordered).controlSize(.small).tint(T.warn)
+                        Button("取消") { s.cancelHFDownload() }
                             .buttonStyle(.bordered).controlSize(.small).tint(T.bad)
                     }
                     ProgressView(value: d.total > 0 ? Double(d.received) / Double(d.total) : 0)
@@ -1817,8 +1897,12 @@ struct HFFilesSheet: View {
                              ? "\(fmt(d.received)) / \(fmt(d.total))"
                              : "已下载 \(fmt(d.received))")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
+                        if let sp = s.downloadSpeed, sp.bytesPerSec > 0 {
+                            Text("· \(fmtSpeed(sp.bytesPerSec)) · 剩余 \(fmtEta(sp.etaSeconds))")
+                                .font(.system(size: 11)).foregroundStyle(.secondary)
+                        }
                         Spacer()
-                        Text("多线程 · 并行下载")
+                        Text("多线程 \(s.downloadSegments) 段 · 并行下载")
                             .font(.system(size: 11)).foregroundStyle(T.accent)
                     }
                 }
@@ -1827,6 +1911,17 @@ struct HFFilesSheet: View {
         }
         .padding(18)
         .frame(width: 520, height: 420)
+    }
+
+    func fmtSpeed(_ b: Double) -> String {
+        if b >= 1_048_576 { return String(format: "%.1f MB/s", b / 1_048_576) }
+        return String(format: "%.0f KB/s", b / 1024)
+    }
+
+    func fmtEta(_ s: Double) -> String {
+        if s >= 3600 { return String(format: "%.1f 小时", s / 3600) }
+        if s >= 60 { return String(format: "%.0f 分钟", s / 60) }
+        return String(format: "%.0f 秒", s)
     }
 
     /// 配对关系说明：与魔搭版一致，明确「投影器 ↔ 主模型」的配对关系。
