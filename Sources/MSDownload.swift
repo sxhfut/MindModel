@@ -107,6 +107,15 @@ enum MSDownload {
     static func download(org: String, name: String, filePath: String,
                          to dir: URL,
                          onProgress: @escaping (Int64, Int64) -> Void) async throws -> URL {
+        guard let url = directURL(org: org, name: name, filePath: filePath) else {
+            throw NSError(domain: "MS", code: -1, userInfo: [NSLocalizedDescriptionKey: "下载地址无效"])
+        }
+        let saveName = (filePath as NSString).lastPathComponent
+        return try await download(url: url, saveName: saveName, to: dir, onProgress: onProgress)
+    }
+
+    /// 构造魔搭直链 URL（供下载与持久化记录复用）。
+    static func directURL(org: String, name: String, filePath: String) -> URL? {
         // FilePath 是 query 参数，用 urlQueryAllowed 转义（含 / 等字符），避免路径被截断
         var allowed = CharacterSet.urlQueryAllowed
         allowed.remove(charactersIn: "/+&=")
@@ -114,11 +123,7 @@ enum MSDownload {
         let orgEnc = org.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? org
         let nameEnc = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? name
         let urlStr = "\(host)/\(orgEnc)/\(nameEnc)/repo?Revision=master&FilePath=\(enc)"
-        guard let url = URL(string: urlStr) else {
-            throw NSError(domain: "MS", code: -1, userInfo: [NSLocalizedDescriptionKey: "下载地址无效"])
-        }
-        let saveName = (filePath as NSString).lastPathComponent
-        return try await download(url: url, saveName: saveName, to: dir, onProgress: onProgress)
+        return URL(string: urlStr)
     }
 
     /// 通用直链流式下载（魔搭与 HuggingFace 直链共用）。
@@ -382,6 +387,106 @@ enum MSDownload {
         } catch {
             return error
         }
+    }
+}
+
+// MARK: - 下载记录持久化（断点续传）
+
+/// 一次下载任务的持久化记录。用于应用重启后识别磁盘上的半截文件并提供「继续下载」。
+/// 关键：半截文件本身不知道原始总大小，所以必须把 totalSize 与远端地址一起落盘。
+struct DownloadRecord: Codable, Identifiable, Equatable {
+    var id: String { fileName }
+    /// 本地保存的文件名（不含目录）
+    let fileName: String
+    /// 远端直链 URL（重新下载/续传用）
+    let remoteURL: String
+    /// 文件总大小（字节）
+    let totalSize: Int64
+    /// 来源：ms / hf
+    let source: String
+    /// 创建时间戳（Unix 秒）
+    let createdAt: Int64
+
+    /// 磁盘上已下载的字节数（含 .parts 分片累计），由检测函数实时计算，不持久化
+    var downloadedBytes: Int64 {
+        // 单文件直下
+        if let a = try? FileManager.default.attributesOfItem(atPath: localPath.path),
+           let sz = a[.size] as? Int64 {
+            return sz
+        }
+        // 分段下载：累计 .parts 各分片
+        var sum: Int64 = 0
+        let parts = localPartsDir
+        if let names = try? FileManager.default.contentsOfDirectory(atPath: parts.path) {
+            for n in names {
+                let p = parts.appendingPathComponent(n)
+                if let a = try? FileManager.default.attributesOfItem(atPath: p.path),
+                   let sz = a[.size] as? Int64 {
+                    sum += sz
+                }
+            }
+        }
+        return sum
+    }
+
+    /// 续传进度 0~1
+    var progress: Double {
+        totalSize > 0 ? min(1.0, Double(downloadedBytes) / Double(totalSize)) : 0
+    }
+
+    var percentText: String {
+        String(format: "%.0f%%", progress * 100)
+    }
+
+    /// 是否已完整（无需续传）
+    var isComplete: Bool { downloadedBytes >= totalSize }
+
+    var localPath: URL {
+        DownloadRecord.downloadDir.appendingPathComponent(fileName)
+    }
+
+    var localPartsDir: URL {
+        DownloadRecord.downloadDir.appendingPathComponent("\(fileName).parts", isDirectory: true)
+    }
+
+    /// 下载目录（与 AppState.downloadDir 一致，但此处非隔离可同步调用）。
+    static let downloadDir: URL = {
+        let dl = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        let dir = dl.appendingPathComponent("MindModel", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }()
+
+    var remote: URL? { URL(string: remoteURL) }
+}
+
+/// 下载记录的存取。UserDefaults key mm.downloads。
+enum DownloadStore {
+    static let key = "mm.downloads"
+
+    static func load() -> [DownloadRecord] {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let list = try? JSONDecoder().decode([DownloadRecord].self, from: data) else { return [] }
+        return list
+    }
+
+    static func save(_ list: [DownloadRecord]) {
+        guard let data = try? JSONEncoder().encode(list) else { return }
+        UserDefaults.standard.set(data, forKey: key)
+    }
+
+    static func upsert(_ rec: DownloadRecord) {
+        var list = load()
+        list.removeAll { $0.id == rec.id }
+        list.append(rec)
+        save(list)
+    }
+
+    static func remove(_ fileName: String) {
+        var list = load()
+        list.removeAll { $0.id == fileName }
+        save(list)
     }
 }
 

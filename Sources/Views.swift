@@ -1396,6 +1396,10 @@ struct OnlineModelsView: View {
                 }
             }
 
+            if !s.resumeRecords.isEmpty {
+                resumeSection
+            }
+
             if s.searchSource == 1 {
                 if !s.msResults.isEmpty {
                     SectionHead(title: "魔搭（\(s.msResults.count) 个）",
@@ -1420,6 +1424,45 @@ struct OnlineModelsView: View {
         .sheet(item: $s.hfListing) { listing in
             HFFilesSheet(modelId: listing.modelId)
         }
+    }
+
+    /// 断点续传区：列出磁盘上未下完的文件，一键继续或删除。
+    var resumeSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionHead(title: "续传下载（\(s.resumeRecords.count) 个未完成）",
+                        sub: "上次中断/取消的下载，已保留部分。点「继续」从断点接着下。")
+            ForEach(s.resumeRecords) { rec in
+                Card(pad: 11) {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(rec.fileName).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                            HStack(spacing: 6) {
+                                Badge(text: rec.source == "ms" ? "魔搭" : "HF", color: .secondary)
+                                Text("已下 \(fmtBytes(rec.downloadedBytes)) / \(fmtBytes(rec.totalSize))")
+                                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Text(rec.percentText).font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(T.accent)
+                            ProgressView(value: rec.progress)
+                                .frame(width: 120)
+                        }
+                        Button("继续") { s.resumeDownload(rec) }
+                            .buttonStyle(.borderedProminent).controlSize(.small)
+                        Button("删除") { s.discardDownload(rec) }
+                            .buttonStyle(.bordered).controlSize(.small).tint(T.bad)
+                    }
+                }
+            }
+        }
+    }
+
+    func fmtBytes(_ b: Int64) -> String {
+        if b >= 1_073_741_824 { return String(format: "%.2f GB", Double(b) / 1_073_741_824.0) }
+        if b >= 1_048_576 { return String(format: "%.1f MB", Double(b) / 1_048_576.0) }
+        return "\(b) B"
     }
 
     func sourceChip(_ label: String, _ idx: Int, _ count: Int) -> some View {

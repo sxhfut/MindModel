@@ -156,6 +156,8 @@ final class AppState: ObservableObject {
     @Published var hfFileProgress: [String: (received: Int64, total: Int64)] = [:]
     /// HF 下载任务句柄（供取消用）
     private var hfDownloadTask: Task<Void, Never>?
+    /// 磁盘上「未完成/可续传」的下载记录（启动时加载，用于断点续传提示）
+    @Published var resumeRecords: [DownloadRecord] = []
 
     // 模型仓库
     @Published var disk = DiskScan()
@@ -207,6 +209,62 @@ final class AppState: ObservableObject {
         }
         loadBench()
         loadLctx()
+        refreshResumeRecords()
+    }
+
+    /// 刷新「可续传」下载记录：读持久化记录，筛掉已完整下载（或文件已不存在）的，保留半截的。
+    func refreshResumeRecords() {
+        let records = DownloadStore.load().filter { $0.downloadedBytes > 0 && !$0.isComplete }
+        // 顺带清理已完整/已消失的记录
+        DownloadStore.save(DownloadStore.load().filter { $0.downloadedBytes > 0 && !$0.isComplete })
+        resumeRecords = records
+    }
+
+    /// 继续下载某个中断的任务（从持久化记录恢复，靠 Range 断点续传）。
+    func resumeDownload(_ rec: DownloadRecord) {
+        guard let url = rec.remote else {
+            toast = "下载地址无效，无法续传"
+            return
+        }
+        let dir = Self.downloadDir()
+        let total = rec.totalSize
+
+        // 复用通用下载入口：底层已支持 Range 断点续传（单连接 & 分段）
+        Task {
+            self.msDownloading = (path: "续传 \(rec.fileName)", received: rec.downloadedBytes, total: total)
+            do {
+                let saved = try await MSDownload.download(url: url, saveName: rec.fileName, to: dir) { recv, tot in
+                    Task { @MainActor in
+                        self.msDownloading = (path: "续传 \(rec.fileName)", received: recv, total: tot)
+                    }
+                }
+                await MainActor.run {
+                    self.msDownloading = nil
+                    DownloadStore.remove(rec.fileName)
+                    self.refreshResumeRecords()
+                    self.toast = "已续传完成 \(rec.fileName)，正在解析…"
+                    self.loadGGUF(paths: [saved.path])
+                }
+            } catch {
+                if Task.isCancelled {
+                    await MainActor.run { self.msDownloading = nil; self.toast = "已取消续传，已下部分保留" }
+                    return
+                }
+                await MainActor.run {
+                    self.msDownloading = nil
+                    self.toast = "续传失败：\(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    /// 删除某个中断任务及磁盘上的半截文件/分片。
+    func discardDownload(_ rec: DownloadRecord) {
+        try? FileManager.default.removeItem(at: rec.localPath)
+        try? FileManager.default.removeItem(at: rec.localPartsDir)
+        DownloadStore.remove(rec.fileName)
+        refreshResumeRecords()
+        toast = "已删除半截文件 \(rec.fileName)"
     }
 
     /// 实测记录只暴露成 [模型名: tok/s] 给推荐引擎，历史细节留在 benchRecords 里
@@ -681,6 +739,16 @@ final class AppState: ObservableObject {
             msDownloading = (path: "正在下载 \(targetFiles.count) 个文件", received: 0, total: totalBytes)
             msFileProgress = Dictionary(uniqueKeysWithValues: targetFiles.map { ($0.path, (received: Int64(0), total: $0.size)) })
 
+            // 下载开始即持久化记录（供重启后断点续传）
+            for f in targetFiles {
+                if let u = MSDownload.directURL(org: listing.org, name: listing.name, filePath: f.path) {
+                    DownloadStore.upsert(DownloadRecord(
+                        fileName: (f.path as NSString).lastPathComponent,
+                        remoteURL: u.absoluteString, totalSize: f.size,
+                        source: "ms", createdAt: Int64(Date().timeIntervalSince1970)))
+                }
+            }
+
             // 线程安全进度聚合（actor）。每个文件一个 key（用文件路径的哈希作索引）。
             let meter = ProgressMeter(total: totalBytes) { sum, tot in
                 Task { @MainActor in
@@ -733,7 +801,8 @@ final class AppState: ObservableObject {
                 self.msFileProgress = [:]
                 self.msDownloadTask = nil
                 if cancelled {
-                    self.toast = "已取消下载，已下完的部分保留"
+                    self.toast = "已取消下载，已下完的部分保留（可续传）"
+                    self.refreshResumeRecords()
                     return
                 }
                 if !failures.isEmpty {
@@ -741,9 +810,15 @@ final class AppState: ObservableObject {
                         if case .failure(let e) = r.1 { return "\(r.0.path): \(self.errText(e))" }
                         return r.0.path
                     }
-                    self.toast = "下载失败：\(msgs.joined(separator: "；"))"
+                    self.toast = "下载失败：\(msgs.joined(separator: "；"))（已下部分保留，可续传）"
+                    self.refreshResumeRecords()
                     return
                 }
+                // 全部成功：清理这些文件的下载记录
+                for f in targetFiles {
+                    DownloadStore.remove((f.path as NSString).lastPathComponent)
+                }
+                self.refreshResumeRecords()
                 let names = downloaded.map { $0.path }
                 let extra = targetFiles.count > 1 ? "（已并行下载 \(targetFiles.count) 个文件）" : ""
                 self.toast = "已下载\(extra)，正在解析…"
@@ -763,7 +838,8 @@ final class AppState: ObservableObject {
         msDownloadTask = nil
         msDownloading = nil
         msFileProgress = [:]
-        toast = "已请求取消下载"
+        refreshResumeRecords()
+        toast = "已请求取消下载，已下部分保留，可续传"
     }
 
     /// 配对决策：返回最终要下载的文件列表（已按「主模型在前、投影器在后」排序）。
@@ -835,6 +911,16 @@ final class AppState: ObservableObject {
             hfDownloading = (path: "正在下载 \(targetFiles.count) 个文件", received: 0, total: totalBytes)
             hfFileProgress = Dictionary(uniqueKeysWithValues: targetFiles.map { ($0.path, (received: Int64(0), total: Int64($0.size))) })
 
+            // 下载开始即持久化记录
+            for f in targetFiles {
+                if let u = f.downloadURL(modelId: listing.modelId) {
+                    DownloadStore.upsert(DownloadRecord(
+                        fileName: (f.path as NSString).lastPathComponent,
+                        remoteURL: u.absoluteString, totalSize: Int64(f.size),
+                        source: "hf", createdAt: Int64(Date().timeIntervalSince1970)))
+                }
+            }
+
             let meter = ProgressMeter(total: totalBytes) { sum, tot in
                 Task { @MainActor in
                     self.hfDownloading = (path: "正在下载 \(targetFiles.count) 个文件", received: sum, total: tot)
@@ -887,7 +973,8 @@ final class AppState: ObservableObject {
                 self.hfFileProgress = [:]
                 self.hfDownloadTask = nil
                 if cancelled {
-                    self.toast = "已取消下载，已下完的部分保留"
+                    self.toast = "已取消下载，已下完的部分保留（可续传）"
+                    self.refreshResumeRecords()
                     return
                 }
                 if !failures.isEmpty {
@@ -895,9 +982,14 @@ final class AppState: ObservableObject {
                         if case .failure(let e) = r.1 { return "\(r.0.path): \(self.errText(e))" }
                         return r.0.path
                     }
-                    self.toast = "下载失败：\(msgs.joined(separator: "；"))"
+                    self.toast = "下载失败：\(msgs.joined(separator: "；"))（已下部分保留，可续传）"
+                    self.refreshResumeRecords()
                     return
                 }
+                for f in targetFiles {
+                    DownloadStore.remove((f.path as NSString).lastPathComponent)
+                }
+                self.refreshResumeRecords()
                 let names = downloaded.map { $0.path }
                 let extra = targetFiles.count > 1 ? "（已并行下载 \(targetFiles.count) 个文件）" : ""
                 self.toast = "已下载\(extra)，正在解析…"
@@ -912,7 +1004,8 @@ final class AppState: ObservableObject {
         hfDownloadTask = nil
         hfDownloading = nil
         hfFileProgress = [:]
-        toast = "已请求取消下载"
+        refreshResumeRecords()
+        toast = "已请求取消下载，已下部分保留，可续传"
     }
 
     /// HF 版配对决策，逻辑与魔搭一致。辅助文件（imatrix/tokenizer）同样排除。
