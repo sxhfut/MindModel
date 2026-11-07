@@ -1,6 +1,8 @@
 # 构建产物
 build/
 .build/
+# make-dmg.sh 的输出；脚本入库、安装包不入库
+*.dmg
 rust/target/
 shells/tauri/src-tauri/target/
 ui/dist/

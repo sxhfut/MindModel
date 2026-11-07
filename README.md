@@ -154,9 +154,24 @@ macOS 桌面版（SwiftUI，无第三方依赖）：
 
 ```bash
 ./build.sh          # 产出 build/MindModel.app
-
+./make-dmg.sh       # 产出 build/MindModel-<版本>.dmg（拖动安装）
 ./make-icon.sh      # 改了图标设计才需要跑：Tools/IconGen.swift → AppIcon.icns
 ```
+
+`swiftc` 以 `-target arm64-apple-macos14.0` 直编，所以产物是 **Apple Silicon 专属、macOS 14+**，Intel Mac 跑不了。`LSMinimumSystemVersion` 也是 14.0。要支持 Intel 需改成 universal 二进制并重编（改 `build.sh` 的 `-target` 加 `x86_64`，或用 `lipo` 合并两份）。
+
+### 打包 DMG
+
+`./make-dmg.sh` 只依赖系统自带的 `hdiutil` / `ditto` / `PlistBuddy`，不需要第三方 `create-dmg`：
+
+- 版本、最低系统、架构从 `Info.plist` 和 `file` 自动读，不写死；
+- 卷内含 `MindModel.app`、`/Applications` 快捷方式、`安装说明.txt`（写明架构限制、签名状态、首次打开方法）；
+- 生成后跑 `hdiutil verify` 校验 CRC，并**挂载卷逐项核验**可执行文件、Info.plist、图标、快捷方式都在；
+- 输出 `build/MindModel-0.1.0.dmg`（UDZO 压缩只读 / HFS+），打印体积与 SHA-256。
+
+常用参数：`./make-dmg.sh --rebuild` 强制先重新编译；`OUT=/path/x.dmg ./make-dmg.sh` 自定义输出位置。
+
+**分发限制（别忽略）**：当前是 **ad-hoc 签名、未公证**，没有 Developer ID 证书。别人双击会看到「无法验证开发者」，需右键→「打开」或执行 `xattr -dr com.apple.quarantine /Applications/MindModel.app`。要对实验室外部正式分发，必须先做 Developer ID 签名 + Apple 公证，再重新打包。另外 DMG 每次生成的 SHA-256 都不同（卷创建时间/UUID 不同），内容一致但字节不可复现，属正常。
 
 图标是代码画出来的，不是位图：`Tools/IconGen.swift` 用 Core Graphics 在 1024 坐标系里绘制，一次输出 10 个尺寸的 iconset（16/32/64px 走简化画法：弧线加粗、去掉斜线与节点，否则小尺寸糊成一团），再由 `iconutil` 打包成 `AppIcon.icns` 入库。改配色或造型只改这一个文件。
 
@@ -214,8 +229,9 @@ MindModel/
 ├── AppIcon.icns         成品图标（iconset 由 make-icon.sh 现场生成，不入库）
 ├── docs/                界面截图 + GitHub Pages 主页
 ├── DESIGN.md            跨平台设计与算法说明
-├── build.sh
-└── make-icon.sh
+├── build.sh             编译 + 打包 .app（含 binary plist / 签名 / 图标）
+├── make-dmg.sh          hdiutil 打包可分发 DMG + 卷内核验
+└── make-icon.sh         Core Graphics 生成 AppIcon.icns
 ```
 
 ## 已知限制
