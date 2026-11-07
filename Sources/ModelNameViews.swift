@@ -188,6 +188,11 @@ struct FitLine: View {
                 Text(String(format: "· 约 %.0f tok/s · %@", fit.estTokS, fit.speed.label))
                     .font(.system(size: 11, design: .rounded))
                     .foregroundStyle(speedColor(fit.speed))
+            } else if fit.specUnknown && fit.level != .tooHeavy {
+                Text("· 速度无法估算")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .help("只拿到了文件体积，模型名里没有参数量——分不清是稠密还是 MoE，速度就不硬给一个数")
             }
             if fit.maxContextK > 0 {
                 Text("· 可开 \(fit.maxContextK)K")
@@ -204,9 +209,11 @@ struct FitLine: View {
                 Text("· 估算")
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary.opacity(0.7))
-                    .help(fit.exactWeight
-                          ? "体积取自真实文件大小；KV/速度按参数量推算"
-                          : "体积与速度均按模型名推算，实际以下载后为准")
+                    .help(fit.specUnknown
+                          ? "体积是真实文件大小；参数量未知，所以没算 KV cache 与速度"
+                          : (fit.exactWeight
+                             ? "体积取自真实文件大小；KV/速度按参数量推算"
+                             : "体积与速度均按模型名推算，实际以下载后为准"))
             }
         }
     }
@@ -218,6 +225,37 @@ struct FitLine: View {
         case .slow: return T.warn
         case .crawl: return T.bad
         }
+    }
+}
+
+/// 无法给出任何评估时的说明行。
+/// 空着不写会被当成程序算错了，所以这里必须明说「缺什么依据」，并强调不等于跑不动。
+struct FitUnknownLine: View {
+    /// 缺依据的具体原因（默认：名字里没有参数量）
+    var reason: String = "模型名里没有参数量，仓库列表也没给文件体积"
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "questionmark.circle").font(.system(size: 10))
+            Text("无法估算本机表现")
+                .font(.system(size: 10.5, weight: .semibold))
+                .padding(.horizontal, 6).padding(.vertical, 2)
+                .background(Color.secondary.opacity(0.12))
+                .foregroundStyle(.secondary)
+                .clipShape(Capsule())
+            Text("· \(reason)")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Text("· 不代表跑不动")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary.opacity(0.75))
+        }
+        .help("""
+        在线搜索只给模型名。名字里带 7B / 30B-A3B 这类参数量，才能推出体积、内存占用和速度；\
+        这条既没有参数量、也没有文件体积，硬算就是编数字，所以这里不下结论。
+        想准确判断：点「下载」列出文件，有了真实体积就能判内存；下载完成后再看实测速度。
+        """)
     }
 }
 

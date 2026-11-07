@@ -42,8 +42,13 @@ struct OnlineFit {
 
     var speed: SpeedGrade { SpeedGrade.of(estTokS) }
 
-    /// 是否值得展示速度估算：嵌入模型没有生成长度，超预算模型根本跑不起来。
-    var showSpeed: Bool { !isEmbedding && level != .tooHeavy }
+    /// 只拿到体积、没拿到参数量：内存档位能判，速度判不了。
+    /// （paramsB 为 0 是「未知」的哨兵值，不是真的 0B 模型）
+    var specUnknown: Bool { paramsB <= 0 }
+
+    /// 是否值得展示速度估算：嵌入模型没有生成长度，超预算模型根本跑不起来，
+    /// 参数量未知时也没有速度可算。
+    var showSpeed: Bool { !isEmbedding && level != .tooHeavy && !specUnknown }
 
     /// 一行可直接展示的规格说明。
     var summary: String {
@@ -52,6 +57,8 @@ struct OnlineFit {
             s += "；嵌入模型，不做 tok/s 估算"
         } else if level == .tooHeavy {
             s += "；超出本机内存，不做速度估算"
+        } else if specUnknown {
+            s += "；速度无法估算（只知道文件体积，不知道参数量）"
         } else {
             s += String(format: "；估算 %.0f tok/s（%@）", estTokS, speed.label)
         }
@@ -71,6 +78,7 @@ struct OnlineFit {
         case .tooHeavy: return "超出本机可用内存，本地跑不动"
         }
         if isEmbedding { return mem + "；嵌入模型，速度取决于批量而非生成长度" }
+        if specUnknown { return mem + "；速度没法给——只知道文件体积，不知道参数量，分不清 dense 还是 MoE" }
         let speedPart: String
         switch speed {
         case .fast:  speedPart = String(format: "约 %.0f tok/s，对话跟手", estTokS)
@@ -83,7 +91,8 @@ struct OnlineFit {
 
     /// 是否「装得下但慢到不实用」——UI 上用警示色区分。
     var slowButFits: Bool {
-        !isEmbedding && level != .tooHeavy && (speed == .slow || speed == .crawl)
+        !isEmbedding && !specUnknown && level != .tooHeavy
+            && (speed == .slow || speed == .crawl)
     }
 }
 
@@ -228,6 +237,36 @@ enum OnlineFitEngine {
         return selfSize.map { $0 * Double(info.total) }
     }
 
+    /// 嵌入 / 重排模型判定：这类模型不产 token，tok/s 无意义。
+    static func isEmbeddingModel(_ name: String) -> Bool {
+        let low = name.lowercased()
+        return low.contains("embed") || low.contains("bge") || low.contains("rerank")
+            || low.contains("gte-") || low.contains("e5")
+    }
+
+    /// 参数量拿不到、但有真实文件体积时的**部分评估**：内存能不能装下能算，
+    /// 速度与上下文算不了（KV cache 取决于层数/头数，两者都无从得知）。
+    ///
+    /// 返回 nil 只在「体积也没有」时发生——那种情况调用方应显示「无法估算」。
+    static func volumeOnlyFit(name: String, weightGB: Double?, budgetGB: Double) -> OnlineFit? {
+        guard let w = weightGB, w > 0.05 else { return nil }
+        let need = w + 1.6                     // 权重 + 运行时，不含 KV（未知）
+        let budget = max(1.0, budgetGB)
+        let ratio = need / budget
+        return OnlineFit(paramsB: 0,
+                         activeB: 0,
+                         weightGB: w,
+                         needGB: need,
+                         ratio: ratio,
+                         level: levelFor(ratio),
+                         estTokS: 0,
+                         maxContextK: 0,
+                         fromCatalog: false,
+                         isEmbedding: isEmbeddingModel(name),
+                         exactWeight: true,
+                         shards: ModelNameDecoder.shardInfo(name)?.total ?? 1)
+    }
+
     /// 主入口：评估一个在线模型在本机的适配度与性能。
     /// - Parameters:
     ///   - weightGB: 模型的**整体**权重体积（分片应已合并）；nil 表示按名字推断
@@ -237,7 +276,11 @@ enum OnlineFitEngine {
                          bandwidth: Double,
                          context: Int,
                          benchmarks: [String: Double] = [:]) -> OnlineFit? {
-        guard let paramsB = ModelNameDecoder.paramsB(name), paramsB > 0 else { return nil }
+        guard let paramsB = ModelNameDecoder.paramsB(name), paramsB > 0 else {
+            // 名字里没有参数量（Kimi-K2、MiniMax-M2、DeepSeek-V3.2 这类命名）：
+            // 有真实文件体积就退化成「只能判内存」的部分评估，连体积也没有才算无法估算。
+            return volumeOnlyFit(name: name, weightGB: weightGB, budgetGB: budgetGB)
+        }
 
         let est = weightEstimate(name: name, paramsB: paramsB)
         let matched = catalogMatch(name: name, paramsB: paramsB)
@@ -274,9 +317,7 @@ enum OnlineFitEngine {
         let ratio = need / budget
         let level = levelFor(ratio)
 
-        let low = name.lowercased()
-        let isEmbedding = low.contains("embed") || low.contains("bge") || low.contains("rerank")
-            || low.contains("gte-") || low.contains("e5")
+        let isEmbedding = isEmbeddingModel(name)
 
         // tok/s ≈ 带宽 × 效率 ÷ 每 token 需读字节数；MoE 只读激活专家
         let share = min(1.0, max(0.02, activeB / max(1.0, paramsB)))

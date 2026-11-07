@@ -1759,10 +1759,12 @@ struct HFRow: View {
                     }
                     // 名字术语解读（参数量/量化/能力，hover 看解释）
                     NameDecodeLine(name: model.modelId)
-                    // 本机适配 + 性能表现
+                    // 本机适配 + 性能表现（没有依据时也明说，不要留空白）
                     if let fit = s.onlineFit(model.modelId) {
                         FitLine(fit: fit, budgetGB: s.budgetGB)
                         if fit.level == .tooHeavy { FitWarnBar(fit: fit) }
+                    } else {
+                        FitUnknownLine()
                     }
                     // 一句话简介（本地从 modelId/tags 推断）
                     if !oneLineIntro.isEmpty {
@@ -1807,10 +1809,12 @@ struct MSRow: View {
                     .lineLimit(1)
                 // 名字术语解读（参数量/量化/能力，hover 看解释）
                 NameDecodeLine(name: model.name)
-                // 本机适配 + 性能表现
+                // 本机适配 + 性能表现（没有依据时也明说，不要留空白）
                 if let fit = s.onlineFit(model.name) {
                     FitLine(fit: fit, budgetGB: s.budgetGB)
                     if fit.level == .tooHeavy { FitWarnBar(fit: fit) }
+                } else {
+                    FitUnknownLine()
                 }
                 // 一句话简介（本地推断）
                 if !model.oneLineIntro.isEmpty {
@@ -1875,6 +1879,17 @@ struct ModelDetailSheet: View {
                             .foregroundStyle(fit.level == .tooHeavy ? T.bad : .secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         Text(fitBasis(fit))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary.opacity(0.85))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Divider()
+            } else {
+                detailBlock("本机能不能跑 · 跑起来什么样") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        FitUnknownLine()
+                        Text("名字和列表里都没有参数量，也没给文件体积，硬算就是编数字。点「下载」列出文件后，有了真实体积就能判断内存装不装得下。")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary.opacity(0.85))
                             .fixedSize(horizontal: false, vertical: true)
@@ -1991,6 +2006,12 @@ struct ModelDetailSheet: View {
 
     /// 适配结论的依据，写清「数字是怎么来的」，方便核对。
     func fitBasis(_ f: OnlineFit) -> String {
+        if f.specUnknown {
+            let shard = f.shards > 1 ? "，\(f.shards) 个分片合计" : ""
+            return "依据：只有真实文件体积 \(String(format: "%.1f", f.weightGB)) GB\(shard)，"
+                + "加运行时开销约 1.6 GB；名字里没有参数量，所以既没算 KV cache，也没估速度。"
+                + "本机可用 \(String(format: "%.0f", s.budgetGB)) GB。"
+        }
         let moe = f.activeB < f.paramsB * 0.95
             ? "（MoE，每 token 只激活约 \(fmtParams(f.activeB))）"
             : ""
@@ -2191,6 +2212,8 @@ struct MSFilesSheet: View {
                                          }) {
                     FitLine(fit: fit, budgetGB: s.budgetGB)
                     if fit.level == .tooHeavy { FitWarnBar(fit: fit) }
+                } else if f.isGGUF && !f.isAux {
+                    FitUnknownLine(reason: "拿不到这个文件的体积")
                 }
                 // 配对提示：点这个文件会带上谁（辅助文件无配对，直接提示不可下载）
                 if f.isAux {
@@ -2438,6 +2461,8 @@ struct HFFilesSheet: View {
                                          }) {
                     FitLine(fit: fit, budgetGB: s.budgetGB)
                     if fit.level == .tooHeavy { FitWarnBar(fit: fit) }
+                } else if f.isGGUF && !f.isAux {
+                    FitUnknownLine(reason: "拿不到这个文件的体积")
                 }
                 if f.isAux {
                     Text("校准/分词辅助文件，无需下载").font(.system(size: 11)).foregroundStyle(.secondary)
