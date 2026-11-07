@@ -39,6 +39,8 @@ struct OnlineFit {
     let isEmbedding: Bool        // 嵌入/重排模型，tok/s 无意义
     let exactWeight: Bool        // 权重体积是否来自真实文件大小
     let shards: Int              // 分片数（>1 表示已按总片数合并估算）
+    /// estTokS 是否来自本机实测（同款模型测过），而非公式估算
+    var isMeasured: Bool = false
 
     var speed: SpeedGrade { SpeedGrade.of(estTokS) }
 
@@ -68,6 +70,8 @@ struct OnlineFit {
             s += "；连 4K 上下文都装不下，做不了速度估算"
         } else if specUnknown {
             s += "；速度无法估算（只知道文件体积，不知道参数量）"
+        } else if isMeasured {
+            s += String(format: "；本机实测 %.0f tok/s（%@）", estTokS, speed.label)
         } else {
             s += String(format: "；估算 %.0f tok/s（%@）", estTokS, speed.label)
         }
@@ -91,6 +95,9 @@ struct OnlineFit {
         }
         if isEmbedding { return mem + "；嵌入模型，速度取决于批量而非生成长度" }
         if specUnknown { return mem + "；速度没法给——只知道文件体积，不知道参数量，分不清 dense 还是 MoE" }
+        if isMeasured {
+            return mem + String(format: "；本机实测 %.0f tok/s（%@）", estTokS, speed.label)
+        }
         let speedPart: String
         switch speed {
         case .fast:  speedPart = String(format: "约 %.0f tok/s，对话跟手", estTokS)
@@ -196,8 +203,12 @@ enum OnlineFitEngine {
         return (paramsB * factor, kv1kEstimate(paramsB), false)
     }
 
-    /// 用本机已有实测记录校准公式系数（纯公式的 0.45 是保守猜测，
-    /// 实测/公式的中位数比值能把系统性偏差吸收掉）。
+    /// 用本机已有实测记录校准公式系数（公式系数是按公开实测反推的，
+    /// 实测/公式的中位数比值能把本机的系统性偏差吸收掉）。
+    ///
+    /// 关键：这里的 `raw` 必须与 `evaluate` 里的公式**同底**（含 dense/MoE 效率系数）。
+    /// 早先版本拿旧的 0.45 常量算基线，得到的比值会系统性地差 2–2.5 倍，
+    /// 再乘回新公式等于把误差叠了两遍——只有 0 条实测时才碰巧没暴露。
     static func calibration(benchmarks: [String: Double], bandwidth: Double) -> Double {
         guard benchmarks.count >= 2 else { return 1.0 }
         let bw = bandwidth > 1 ? bandwidth : 400.0
@@ -209,7 +220,8 @@ enum OnlineFitEngine {
             guard let m = catalogMatch(name: tag, paramsB: p), m.q4GB > 0.1 else { continue }
             let share = min(1.0, max(0.02, m.activeB / max(1.0, m.paramsB)))
             let bytesPerToken = m.q4GB * share + 0.25
-            let raw = bw * 0.45 / max(0.3, bytesPerToken)
+            let dense = m.activeB >= m.paramsB * 0.95
+            let raw = bw * efficiency(dense: dense) / max(0.3, bytesPerToken)
             guard raw > 1 else { continue }
             ratios.append(real / raw)
         }
@@ -218,6 +230,31 @@ enum OnlineFitEngine {
         let med = ratios[ratios.count / 2]
         // 夹在合理区间，避免个别异常实测把全局估算带飞
         return min(1.6, max(0.55, med))
+    }
+
+    // MARK: - 实测记录的复用
+
+    /// 本机是否**实测过同一款模型**，有就直接用真实 tok/s，不再猜。
+    ///
+    /// 判同款不看名字像不像，而是把两边各自匹配到内置清单的同一条：
+    /// 实测 tag（如 `qwen2.5:14b`）与在线模型（如 `Qwen/Qwen2.5-14B-Instruct-GGUF`）
+    /// 在清单里落到同一条，才算同一款。这样 14B 的实测不会被套到 32B 上。
+    static func measuredTokS(name: String, paramsB: Double,
+                             benchmarks: [String: Double]) -> Double? {
+        guard !benchmarks.isEmpty else { return nil }
+        guard let mine = catalogMatch(name: name, paramsB: paramsB) else { return nil }
+        var bestGap: Double?
+        var bestTps: Double?
+        for (tag, tps) in benchmarks {
+            guard tps > 1, let p = ModelNameDecoder.paramsB(tag) else { continue }
+            guard let theirs = catalogMatch(name: tag, paramsB: p) else { continue }
+            guard theirs.name == mine.name else { continue }
+            let gap = abs(p - paramsB)
+            if let g = bestGap, gap >= g { continue }
+            bestGap = gap
+            bestTps = tps
+        }
+        return bestTps
     }
 
     /// 分片文件的归属键：去掉 `-00001-of-00004` 这段，得到同一模型的公共前缀。
@@ -338,6 +375,8 @@ enum OnlineFitEngine {
         let cal = calibration(benchmarks: benchmarks, bandwidth: bandwidth)
         let dense = activeB >= paramsB * 0.95
         let tps = min(260.0, max(0.4, bw * efficiency(dense: dense) / max(0.3, bytesPerToken) * cal))
+        // 本机测过同款就直接报实测值——估算再准也不如自己的数
+        let measured = measuredTokS(name: name, paramsB: paramsB, benchmarks: benchmarks)
 
         // 仍能跑（占比 ≤92%）的最大上下文
         var maxCtx = 0
@@ -352,12 +391,13 @@ enum OnlineFitEngine {
                          needGB: need,
                          ratio: ratio,
                          level: level,
-                         estTokS: isEmbedding ? 0 : tps,
+                         estTokS: isEmbedding ? 0 : (measured ?? tps),
                          maxContextK: maxCtx / 1024,
                          fromCatalog: est.fromCatalog,
                          isEmbedding: isEmbedding,
                          exactWeight: exact,
-                         shards: shards)
+                         shards: shards,
+                         isMeasured: !isEmbedding && measured != nil)
     }
 
     /// 与 Advisor 完全一致的档位阈值，保证在线/离线判定口径统一。

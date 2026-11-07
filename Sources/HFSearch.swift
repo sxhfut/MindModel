@@ -102,6 +102,14 @@ struct HFModel: Identifiable, Codable {
     }
 }
 
+/// 仓库名做百分号编码：保留 "/"（仓库名是 owner/repo 两段），
+/// 空格、中文、#、? 等 URL 里非法的字符一律转义。
+/// 用户在搜索框里输什么，都可能原样变成 modelId 去拼 URL——
+/// 不转义的话 `URL(string:)` 直接返回 nil，轻则列表打不开，重则强解包崩溃。
+func urlPathEscape(_ s: String) -> String {
+    s.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? s
+}
+
 /// HuggingFace 搜索 API 客户端。零依赖，用 URLSession。
 /// 域名默认走 hf-mirror.com（国内可达），原始 huggingface.co 在本机被墙。
 /// 用环境变量 HF_ENDPOINT 可覆盖（例如设回 https://huggingface.co）。
@@ -115,7 +123,10 @@ enum HFSearch {
 
     /// 搜索模型。q 为空时返回热门模型。format 为 .ggufOnly 时只搜 GGUF，.all 时搜全部格式。
     static func search(_ q: String, format: ModelFormat = .ggufOnly, limit: Int = 50) async throws -> [HFModel] {
-        var comps = URLComponents(string: base)!
+        guard var comps = URLComponents(string: base) else {
+            throw NSError(domain: "HF", code: -1,
+                          userInfo: [NSLocalizedDescriptionKey: "HF_ENDPOINT 不是合法地址：\(base)"])
+        }
         var items = [URLQueryItem(name: "limit", value: String(limit)),
                      URLQueryItem(name: "sort", value: "downloads"),
                      URLQueryItem(name: "direction", value: "-1")]
@@ -128,7 +139,11 @@ enum HFSearch {
         }
         comps.queryItems = items
 
-        let (data, resp) = try await URLSession.shared.data(from: comps.url!)
+        guard let u = comps.url else {
+            throw NSError(domain: "HF", code: -1,
+                          userInfo: [NSLocalizedDescriptionKey: "搜索地址拼不出来（检查 HF_ENDPOINT）"])
+        }
+        let (data, resp) = try await URLSession.shared.data(from: u)
         if let http = resp as? HTTPURLResponse, http.statusCode != 200 {
             throw NSError(domain: "HF", code: http.statusCode,
                           userInfo: [NSLocalizedDescriptionKey: "HuggingFace 返回 \(http.statusCode)"])
@@ -139,7 +154,10 @@ enum HFSearch {
     /// 列出某个仓库里的文件（含大小）。format 为 .ggufOnly 时只列 .gguf/.mmproj，
     /// .all 时列出全部文件（如 safetensors 原始权重）。
     static func files(_ modelId: String, format: ModelFormat = .ggufOnly) async throws -> [HFFile] {
-        let url = URL(string: "https://hf-mirror.com/api/models/\(modelId)/tree/main")!
+        guard let url = URL(string: "https://hf-mirror.com/api/models/\(urlPathEscape(modelId))/tree/main") else {
+            throw NSError(domain: "HF", code: -1,
+                          userInfo: [NSLocalizedDescriptionKey: "仓库名含无法用于地址的字符：\(modelId)"])
+        }
         let (data, resp) = try await URLSession.shared.data(from: url)
         if let http = resp as? HTTPURLResponse, http.statusCode != 200 {
             throw NSError(domain: "HF", code: http.statusCode,
@@ -197,8 +215,8 @@ struct HFFile: Codable, Identifiable {
     /// 直链（走 hf-mirror resolve，国内可达）：
     /// https://hf-mirror.com/{modelId}/resolve/main/{path}
     func downloadURL(modelId: String) -> URL? {
-        let p = path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? path
-        return URL(string: "https://hf-mirror.com/\(modelId)/resolve/main/\(p)")
+        let p = urlPathEscape(path)
+        return URL(string: "https://hf-mirror.com/\(urlPathEscape(modelId))/resolve/main/\(p)")
     }
 
     /// 是否 gguf 文件（含 mmproj 投影器）
@@ -469,7 +487,10 @@ enum MSSearch {
         let body: [String: Any] = [
             "Name": name, "PageSize": limit, "PageNumber": 1, "SortBy": "Default"
         ]
-        var req = URLRequest(url: URL(string: url)!)
+        guard let apiURL = URL(string: url) else {
+            throw NSError(domain: "MS", code: -1, userInfo: [NSLocalizedDescriptionKey: "魔搭搜索地址无效"])
+        }
+        var req = URLRequest(url: apiURL)
         req.httpMethod = "PUT"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try JSONSerialization.data(withJSONObject: body)

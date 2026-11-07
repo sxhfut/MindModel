@@ -24,6 +24,26 @@ struct GGUFInfo {
     var hasChatTemplate = false
 }
 
+/// 饱和转换：坏掉的 GGUF 头里可能写着天文数字或 NaN。
+/// Swift 的 `Int(Double)` / `Int(UInt64)` 在这种值上是**陷阱指令**（直接 crash），
+/// 不是返回 nil——导入一个下崩的文件就会把整个应用带走，所以一律走这两个函数。
+@inline(__always) private func satInt(_ d: Double) -> Int {
+    if d.isNaN { return 0 }
+    if d >= 9.2e18 { return Int.max }
+    if d <= -9.2e18 { return Int.min }
+    return Int(d)
+}
+
+@inline(__always) private func satInt(_ u: UInt64) -> Int {
+    u > UInt64(Int.max) ? Int.max : Int(u)
+}
+
+/// 只接受落在 (0, upTo] 的整数值；NaN、负数、天文数字一律归 0（当作没读到）
+@inline(__always) private func sane(_ d: Double, upTo: Int) -> Int {
+    guard d > 0, d <= Double(upTo) else { return 0 }
+    return Int(d)
+}
+
 /// 只读 GGUF 头部：魔数 → 版本 → KV 表 → 张量信息表。
 /// 关键点：数组必须按真实元素个数跳过，不能截断，否则后续全部错位。
 enum GGUF {
@@ -81,15 +101,19 @@ enum GGUF {
             switch t {
             case 0: let v = d[safe: off]; skip(1); return Double(v)
             case 1: let v = d[safe: off]; skip(1); return Double(Int8(bitPattern: v))
-            case 2: var v: UInt16 = 0; withUnsafeMutableBytes(of: &v) { _ = d.copyBytes(to: $0, from: off..<(off + 2)) }; skip(2); return Double(v)
-            case 3: var v: Int16 = 0; withUnsafeMutableBytes(of: &v) { _ = d.copyBytes(to: $0, from: off..<(off + 2)) }; skip(2); return Double(v)
+            case 2: guard need(2) else { return 0 }
+                    var v: UInt16 = 0; withUnsafeMutableBytes(of: &v) { _ = d.copyBytes(to: $0, from: off..<(off + 2)) }; skip(2); return Double(v)
+            case 3: guard need(2) else { return 0 }
+                    var v: Int16 = 0; withUnsafeMutableBytes(of: &v) { _ = d.copyBytes(to: $0, from: off..<(off + 2)) }; skip(2); return Double(v)
             case 4: return Double(u32())
             case 5: return Double(Int32(bitPattern: u32()))
-            case 6: var v: Float32 = 0; withUnsafeMutableBytes(of: &v) { _ = d.copyBytes(to: $0, from: off..<(off + 4)) }; skip(4); return Double(v)
+            case 6: guard need(4) else { return 0 }
+                    var v: Float32 = 0; withUnsafeMutableBytes(of: &v) { _ = d.copyBytes(to: $0, from: off..<(off + 4)) }; skip(4); return Double(v)
             case 7: let v = d[safe: off]; skip(1); return Double(v)
             case 10: return Double(u64())
             case 11: return Double(Int64(bitPattern: u64()))
-            case 12: var v: Double = 0; withUnsafeMutableBytes(of: &v) { _ = d.copyBytes(to: $0, from: off..<(off + 8)) }; skip(8); return v
+            case 12: guard need(8) else { return 0 }
+                     var v: Double = 0; withUnsafeMutableBytes(of: &v) { _ = d.copyBytes(to: $0, from: off..<(off + 8)) }; skip(8); return v
             default:
                 skipValue(t)
                 return 0
@@ -121,7 +145,7 @@ enum GGUF {
 
     /// ggml 文件类型 → 量化名（与 llama.cpp 的枚举一致）
     static func quantName(_ v: Double) -> String {
-        switch Int(v) {
+        switch satInt(v) {
         case 0: return "F32"
         case 1: return "F16"
         case 2: return "Q4_0"
@@ -147,7 +171,7 @@ enum GGUF {
         case 30: return "IQ4_XS"
         case 31: return "IQ1_M"
         case 32: return "BF16"
-        default: return "type\(Int(v))"
+        default: return "type\(satInt(v))"
         }
     }
 
@@ -185,8 +209,8 @@ enum GGUF {
         guard r.u32() == 0x4655_4747 else { return nil }   // "GGUF"
         let version = r.u32()
         guard version >= 2, version <= 4 else { return nil }
-        let tensorCount = Int(r.u64())
-        let kvCount = Int(r.u64())
+        let tensorCount = satInt(r.u64())
+        let kvCount = satInt(r.u64())
         guard !r.bad, kvCount > 0, kvCount < 100_000, tensorCount >= 0, tensorCount < 2_000_000 else { return nil }
 
         for _ in 0..<kvCount {
@@ -208,15 +232,17 @@ enum GGUF {
                     if key == "tokenizer.chat_template" { info.hasChatTemplate = !s.isEmpty }
                 } else {
                     let v = r.num(t)
+                    // 只接受物理上说得通的值：饱和转换会把 1e300 钳成 Int.max，
+                    // 那会变成「上下文 9.2e18」这种荒谬数字，超范围一律当没读到。
                     switch true {
                     case key == "general.file_type": info.quant = quantName(v)
-                    case key.hasSuffix(".block_count"): info.blockCount = Int(v)
-                    case key.hasSuffix(".context_length"): info.contextLength = Int(v)
-                    case key.hasSuffix(".attention.head_count_kv"): info.headCountKV = Int(v)
-                    case key.hasSuffix(".attention.head_count"): info.headCount = Int(v)
-                    case key.hasSuffix(".embedding_length"): info.embeddingLength = Int(v)
-                    case key == "split.count": info.splitCount = max(1, Int(v))
-                    case key == "split.no": info.splitNo = Int(v)
+                    case key.hasSuffix(".block_count"): info.blockCount = sane(v, upTo: 10_000)
+                    case key.hasSuffix(".context_length"): info.contextLength = sane(v, upTo: 10_000_000)
+                    case key.hasSuffix(".attention.head_count_kv"): info.headCountKV = sane(v, upTo: 10_000)
+                    case key.hasSuffix(".attention.head_count"): info.headCount = sane(v, upTo: 10_000)
+                    case key.hasSuffix(".embedding_length"): info.embeddingLength = sane(v, upTo: 10_000_000)
+                    case key == "split.count": info.splitCount = max(1, sane(v, upTo: 100))
+                    case key == "split.no": info.splitNo = min(sane(v, upTo: 100), 100)
                     case key == "clip.has_vision_encoder": info.hasVision = v > 0
                     default: break
                     }

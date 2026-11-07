@@ -809,6 +809,11 @@ struct ModelRow: View {
                             .foregroundStyle(a.estTokS > 25 ? T.good : (a.estTokS > 8 ? .primary : T.warn))
                         Text(s.benchmarks[a.model.name] != nil ? "实测 tok/s" : "估算 tok/s")
                             .font(.system(size: 11)).foregroundStyle(.secondary)
+                            .help(s.benchmarks[a.model.name] != nil
+                                  ? "本机跑过这个模型，是 eval_count / eval_duration 算出来的真实速度"
+                                  : "未实测，按保守系数（0.45）估的——大 dense 模型会明显偏低。"
+                                    + "「在线模型」页用的是按实测校准过的模型，同一模型两页数值可能差 1.5–2.5 倍；"
+                                    + "想拿到准确值，去「实测」页跑一次。")
                     } else {
                         // 出图、转写、重排的"每秒 token"没有意义，不要编一个数出来
                         Text("—").font(.system(size: 14, weight: .semibold, design: .rounded))
@@ -1454,6 +1459,14 @@ struct OnlineModelsView: View {
                         }
                         Label("评估上下文 \(s.contextTokens / 1024)K", systemImage: "text.alignleft")
                             .font(.system(size: 11)).foregroundStyle(.secondary)
+                        if s.benchmarks.count >= 2 {
+                            Label(String(format: "估算已按 %d 条实测校准 ×%.2f",
+                                         s.benchmarks.count, s.calibrationFactor),
+                                  systemImage: "slider.horizontal.3")
+                                .font(.system(size: 11))
+                                .foregroundStyle(s.calibrationFactor < 0.9 ? T.warn : .secondary)
+                                .help("公式系数是按公开实测反推的。本机实测与公式有系统性偏差时，用中位比值整体缩放；超过 2 条实测才启用")
+                        }
                         Spacer()
                     }
                     .help("每个模型下方的「适配/性能」都按这台机器的可用内存、实测带宽和当前上下文估算")

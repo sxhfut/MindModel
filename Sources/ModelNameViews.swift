@@ -189,9 +189,14 @@ struct FitLine: View {
                 .font(.system(size: 11, design: .rounded))
                 .foregroundStyle(.secondary)
             if fit.showSpeed {
-                Text(String(format: "· 约 %.0f tok/s · %@", fit.estTokS, fit.speed.label))
+                Text(fit.isMeasured
+                     ? String(format: "· 实测 %.0f tok/s · %@", fit.estTokS, fit.speed.label)
+                     : String(format: "· 约 %.0f tok/s · %@", fit.estTokS, fit.speed.label))
                     .font(.system(size: 11, design: .rounded))
-                    .foregroundStyle(speedColor(fit.speed))
+                    .foregroundStyle(fit.isMeasured ? T.good : speedColor(fit.speed))
+                    .help(fit.isMeasured
+                          ? "本机测过同款模型，这是真实生成速度，不是公式估算"
+                          : "按本机实测带宽与每 token 需读字节数估算，偏差约 ±30%")
             } else if fit.specUnknown && !fit.shouldWarn {
                 Text("· 速度无法估算")
                     .font(.system(size: 11))
@@ -209,7 +214,15 @@ struct FitLine: View {
                     .foregroundStyle(.secondary)
                     .help("分片模型的单片体积不等于模型体积，这里已按总片数合并估算")
             }
-            if !fit.exactWeight || !fit.fromCatalog {
+            if fit.isMeasured {
+                // 速度已是实测，只对「体积是否估的」打个标
+                if !fit.exactWeight {
+                    Text("· 体积估算")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary.opacity(0.7))
+                        .help("速度是本机实测；体积按模型名推算，下载后以真实文件为准")
+                }
+            } else if !fit.exactWeight || !fit.fromCatalog {
                 Text("· 估算")
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary.opacity(0.7))

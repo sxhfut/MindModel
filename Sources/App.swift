@@ -450,6 +450,11 @@ final class AppState: ObservableObject {
     /// 实测记录只暴露成 [模型名: tok/s] 给推荐引擎，历史细节留在 benchRecords 里
     var benchmarks: [String: Double] { benchRecords.mapValues { $0.tps } }
 
+    /// 估算公式的本机自校准系数（无实测或实测不足 2 条时为 1.0）
+    var calibrationFactor: Double {
+        OnlineFitEngine.calibration(benchmarks: benchmarks, bandwidth: bandwidth ?? 0)
+    }
+
     /// 云端模型没有本地权重，跑实测没有意义，也不占磁盘
     func isCloud(_ m: InstalledModel) -> Bool { manifest(m.name)?.remote ?? false }
 
