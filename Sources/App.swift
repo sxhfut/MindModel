@@ -184,6 +184,10 @@ final class AppState: ObservableObject {
     @Published var searchSource = 1
     /// 模型格式过滤（仅 GGUF / 全部格式），可设置并持久化
     @Published var modelFormat: ModelFormat = .ggufOnly { didSet { saveModelFormat() } }
+    /// 参数量筛选（搜索结果的本地二次筛选）
+    @Published var paramFilter: ParamFilter = .all
+    /// 结果排序方式
+    @Published var sortOrder: SortOrder = .downloads
 
     // 魔搭应用内直下
     /// 当前正在浏览文件的仓库（org/name），非空时展示文件列表弹层
@@ -304,6 +308,32 @@ final class AppState: ObservableObject {
 
     private func saveModelFormat() {
         UserDefaults.standard.set(modelFormat.rawValue, forKey: "mm.format")
+    }
+
+    /// 魔搭搜索结果：先按参数量筛选，再按排序方式排列（供 UI 消费，不落盘）。
+    var msResultsFiltered: [MSModel] {
+        var list = msResults.filter { paramFilter.accepts(ModelNameDecoder.paramsB($0.name)) }
+        if sortOrder == .params {
+            list.sort {
+                let a = ModelNameDecoder.paramsB($0.name) ?? -1
+                let b = ModelNameDecoder.paramsB($1.name) ?? -1
+                return a < b
+            }
+        }
+        return list
+    }
+
+    /// HuggingFace 搜索结果：同上。
+    var hfResultsFiltered: [HFModel] {
+        var list = hfResults.filter { paramFilter.accepts(ModelNameDecoder.paramsB($0.modelId)) }
+        if sortOrder == .params {
+            list.sort {
+                let a = ModelNameDecoder.paramsB($0.modelId) ?? -1
+                let b = ModelNameDecoder.paramsB($1.modelId) ?? -1
+                return a < b
+            }
+        }
+        return list
     }
 
     private func saveDownloadSegments() {

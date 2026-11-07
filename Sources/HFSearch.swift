@@ -25,6 +25,40 @@ enum ModelFormat: String, CaseIterable, Identifiable {
     }
 }
 
+/// 参数量筛选（十亿参数为界），用于快速缩小选型范围。
+enum ParamFilter: String, CaseIterable, Identifiable {
+    case all = "全部"
+    case upTo8B = "≤8B"
+    case upTo14B = "≤14B"
+    case upTo32B = "≤32B"
+    case upTo70B = "≤70B"
+
+    var id: String { rawValue }
+    var label: String { rawValue }
+
+    /// 该筛选是否接受某个参数量（nil = 无法识别，按「接受」处理，交给用户自己判断）
+    func accepts(_ b: Double?) -> Bool {
+        guard let b else { return true }
+        switch self {
+        case .all: return true
+        case .upTo8B: return b <= 8
+        case .upTo14B: return b <= 14
+        case .upTo32B: return b <= 32
+        case .upTo70B: return b <= 70
+        }
+    }
+}
+
+/// 结果排序方式。
+enum SortOrder: String, CaseIterable, Identifiable {
+    case downloads = "下载量"
+    case params = "参数量"
+
+    var id: String { rawValue }
+    var label: String { rawValue }
+}
+
+
 /// HuggingFace 上的一条 GGUF 模型搜索结果。
 /// 只用于「在线找模型」——内置目录仍以 data/models.toml 为权威，这里提供的是
 /// 清单之外、社区持续更新的 GGUF 模型入口。

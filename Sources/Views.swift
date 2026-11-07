@@ -1376,8 +1376,8 @@ struct OnlineModelsView: View {
                             .buttonStyle(.bordered).controlSize(.small)
                         Spacer()
                     }
-                    // 格式 + 双源切换
-                    HStack(spacing: 8) {
+                    // 格式 + 参数量筛选 + 排序
+                    HStack(spacing: 10) {
                         // 格式过滤：仅 GGUF / 全部格式
                         Picker("", selection: $s.modelFormat) {
                             ForEach(ModelFormat.allCases) { f in
@@ -1390,6 +1390,24 @@ struct OnlineModelsView: View {
                             s.searchHF()
                         }
                         Spacer()
+                        // 参数量筛选
+                        Text("参数").font(.system(size: 12)).foregroundStyle(.secondary)
+                        Picker("", selection: $s.paramFilter) {
+                            ForEach(ParamFilter.allCases) { f in
+                                Text(f.label).tag(f)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(maxWidth: 90)
+                        // 排序
+                        Text("排序").font(.system(size: 12)).foregroundStyle(.secondary)
+                        Picker("", selection: $s.sortOrder) {
+                            ForEach(SortOrder.allCases) { o in
+                                Text(o.label).tag(o)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(maxWidth: 100)
                     }
                     // 双源切换
                     HStack(spacing: 8) {
@@ -1433,18 +1451,18 @@ struct OnlineModelsView: View {
             }
 
             if s.searchSource == 1 {
-                if !s.msResults.isEmpty {
-                    SectionHead(title: "魔搭（\(s.msResults.count) 个）",
+                if !s.msResultsFiltered.isEmpty {
+                    SectionHead(title: "魔搭（\(s.msResultsFiltered.count) 个）",
                                 sub: "按下载量排序 · 点「下载」直接下到本地，无需跳转")
-                    ForEach(s.msResults) { m in MSRow(model: m) }
+                    ForEach(s.msResultsFiltered) { m in MSRow(model: m) }
                 } else if s.hfSearched && !s.hfSearching {
                     emptyCard()
                 }
             } else {
-                if !s.hfResults.isEmpty {
-                    SectionHead(title: "HuggingFace（\(s.hfResults.count) 个）",
+                if !s.hfResultsFiltered.isEmpty {
+                    SectionHead(title: "HuggingFace（\(s.hfResultsFiltered.count) 个）",
                                 sub: "按下载量排序 · 点「下载」走 huggingface-cli，或「详情」手动下")
-                    ForEach(s.hfResults) { m in HFRow(model: m) }
+                    ForEach(s.hfResultsFiltered) { m in HFRow(model: m) }
                 } else if s.hfSearched && !s.hfSearching {
                     emptyCard()
                 }
@@ -2028,6 +2046,11 @@ struct MSFilesSheet: View {
         if lines.isEmpty {
             lines.append("多模态模型需要「主模型 + 投影器」两件套，点任一个会自动配对下载。")
         }
+        // 量化版本推荐：同基座多版本时，提示最均衡的那一个
+        let mainPaths = s.msFiles.filter { !$0.isAux && $0.isGGUF && !$0.isProjector }.map { $0.path }
+        if mainPaths.count > 1, let rec = ModelNameDecoder.recommendedFileName(mainPaths) {
+            lines.append("推荐版本：\(rec)（质量与体积最均衡）")
+        }
         return VStack(alignment: .leading, spacing: 4) {
             ForEach(lines, id: \.self) { t in
                 HStack(spacing: 6) {
@@ -2074,10 +2097,19 @@ struct MSFilesSheet: View {
                     } else {
                         Badge(text: "主模型", color: T.good)
                     }
+                    if f.isGGUF && !f.isAux && !f.isProjector && isRecommendedMS(f) {
+                        Badge(text: "推荐", color: T.warn)
+                    }
                 }
                 Text(f.sizeGB).font(.system(size: 12)).foregroundStyle(.secondary)
                 // 文件名术语解读（量化/精度/能力，hover 看解释）
                 NameDecodeLine(name: f.path)
+                // 体积预估（参数量×量化精度），有明确规格时显示「约 N GB」
+                if let est = ModelNameDecoder.estimateText(f.path) {
+                    Text("\(est) · 估算").font(.system(size: 11)).foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                // 配对提示：点这个文件会带上谁（辅助文件无配对，直接提示不可下载）
                 if f.isAux {
                     Text("校准/分词辅助文件，无需下载").font(.system(size: 11)).foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -2109,6 +2141,14 @@ struct MSFilesSheet: View {
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+    }
+
+    /// 该文件是否是「推荐版本」（同基座多量化版本里质量与体积最均衡的那个）。
+    func isRecommendedMS(_ f: MSFile) -> Bool {
+        let mains = s.msFiles.filter { !$0.isAux && $0.isGGUF && !$0.isProjector }
+        guard mains.count > 1,
+              let rec = ModelNameDecoder.recommendedFileName(mains.map { $0.path }) else { return false }
+        return (f.path as NSString).lastPathComponent == rec
     }
 
     func pct(_ r: Int64, _ t: Int64) -> String {
@@ -2250,6 +2290,11 @@ struct HFFilesSheet: View {
         if lines.isEmpty {
             lines.append("多模态模型需要「主模型 + 投影器」两件套，点任一个会自动配对下载。")
         }
+        // 量化版本推荐：同基座多版本时，提示最均衡的那一个
+        let mainPaths = s.hfFiles.filter { !$0.isAux && $0.isGGUF && !$0.isProjector }.map { $0.path }
+        if mainPaths.count > 1, let rec = ModelNameDecoder.recommendedFileName(mainPaths) {
+            lines.append("推荐版本：\(rec)（质量与体积最均衡）")
+        }
         return VStack(alignment: .leading, spacing: 4) {
             ForEach(lines, id: \.self) { t in
                 HStack(spacing: 6) {
@@ -2295,10 +2340,18 @@ struct HFFilesSheet: View {
                     } else {
                         Badge(text: "主模型", color: T.good)
                     }
+                    if f.isGGUF && !f.isAux && !f.isProjector && isRecommendedHF(f) {
+                        Badge(text: "推荐", color: T.warn)
+                    }
                 }
                 Text(f.sizeGB).font(.system(size: 12)).foregroundStyle(.secondary)
                 // 文件名术语解读（量化/精度/能力，hover 看解释）
                 NameDecodeLine(name: f.path)
+                // 体积预估（参数量×量化精度）
+                if let est = ModelNameDecoder.estimateText(f.path) {
+                    Text("\(est) · 估算").font(.system(size: 11)).foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
                 if f.isAux {
                     Text("校准/分词辅助文件，无需下载").font(.system(size: 11)).foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -2329,6 +2382,14 @@ struct HFFilesSheet: View {
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+    }
+
+    /// 该文件是否是「推荐版本」（同基座多量化版本里质量与体积最均衡的那个）。
+    func isRecommendedHF(_ f: HFFile) -> Bool {
+        let mains = s.hfFiles.filter { !$0.isAux && $0.isGGUF && !$0.isProjector }
+        guard mains.count > 1,
+              let rec = ModelNameDecoder.recommendedFileName(mains.map { $0.path }) else { return false }
+        return (f.path as NSString).lastPathComponent == rec
     }
 
     func pct(_ r: Int64, _ t: Int64) -> String {

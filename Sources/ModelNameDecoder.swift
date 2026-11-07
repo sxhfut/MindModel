@@ -144,4 +144,86 @@ enum ModelNameDecoder {
         if low.contains("q4") { return 0.55 }
         return nil
     }
+
+    /// 从名字里提取参数量（单位：十亿，即 8B → 8.0）。供筛选、排序、内存预估复用。
+    static func paramsB(_ name: String) -> Double? {
+        let low = name.lowercased()
+        let pattern = #"(?<![a-z])(\d+(?:\.\d+)?)b(?![a-z])"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
+        let range = NSRange(low.startIndex..., in: low)
+        guard let m = regex.firstMatch(in: low, range: range),
+              let r = Range(m.range(at: 1), in: low),
+              let v = Double(low[r]), v > 0 else { return nil }
+        return v
+    }
+
+    /// 估算模型体积（GB）。公式：参数量(B) × 精度系数；系数缺失时按 FP16 算。
+    /// 例：Qwen3-8B-Instruct-Q4_K_M → 8 × 0.55 ≈ 4.4 GB；8B-FP16 → 16 GB。
+    static func estimateGB(_ name: String) -> Double? {
+        guard let p = paramsB(name) else { return nil }
+        let factor = sizeFactor(name) ?? 2.0
+        return p * factor
+    }
+
+    /// 体积 → 人话文案，如「约 4.4 GB」。
+    static func estimateText(_ name: String) -> String? {
+        guard let gb = estimateGB(name) else { return nil }
+        if gb >= 1 { return String(format: "约 %.1f GB", gb) }
+        return String(format: "约 %.0f MB", gb * 1024)
+    }
+
+    /// 提取「模型基座名」：去掉量化方法/精度/格式后缀，用于把同一模型的多个量化版本聚合成一组。
+    /// 例：Qwen3-8B-Instruct-Q4_K_M.gguf → qwen3-8b-instruct
+    ///      llama-3.1-8b-instruct-q8_0.gguf → llama-3.1-8b-instruct
+    static func baseKey(_ name: String) -> String {
+        var low = name.lowercased()
+        // 去扩展名
+        for ext in [".gguf", ".safetensors", ".bin", ".pt", ".pth", ".mmproj"] {
+            if low.hasSuffix(ext) { low = String(low.dropLast(ext.count)) }
+        }
+        // 去量化/精度/格式后缀标记（出现在名字靠后的位置）
+        // 覆盖：-q4_k_m / -q5_0 / -q8_0 / -q4 / -fp16 / -bf16 / -awq / -gptq / -gsq / -rco / -gguf 等
+        let suffixes = [
+            "-q4_k_m", "-q5_k_m", "-q6_k", "-q8_0", "-q4_k_s", "-q5_k_s",
+            "-q4_0", "-q5_0", "-q6_k", "-q8_0", "-q4", "-q5", "-q6", "-q8",
+            "-fp16", "-bf16", "-fp8", "-f16", "-f32",
+            "-awq", "-gptq", "-gsq", "-rco", "-gguf", "-iq4_xs", "-iq3_xxs",
+            "-q3_k_m", "-q3_k_s", "-q2_k", "-q3", "-q2",
+        ]
+        for s in suffixes {
+            if low.hasSuffix(s) { low = String(low.dropLast(s.count)); break }
+        }
+        return low
+    }
+
+    /// 量化精度 → 质量等级（用于「推荐版本」排序，值越小越推荐）。
+    /// 推荐优先级：Q4_K_M ≈ Q5_K_M > Q6 > Q8 > Q5 > Q4 > FP16 > 过度压缩。
+    static func qualityRank(_ name: String) -> Int {
+        let low = name.lowercased()
+        if low.contains("q4_k_m") || low.contains("q5_k_m") { return 0 } // 均衡首选
+        if low.contains("q6_k") { return 1 }
+        if low.contains("q8") { return 2 }
+        if low.contains("q5") { return 3 }
+        if low.contains("q4") { return 4 }
+        if low.contains("fp16") || low.contains("bf16") { return 5 } // 质量最高但太大
+        if low.contains("q3") || low.contains("q2") { return 6 }       // 过度压缩
+        return 7
+    }
+
+    /// 从一组主模型 gguf 文件里挑出「推荐版本」（同基座里质量等级最优的那个）。
+    /// 返回文件名（path 的最后一段）或 nil（没有候选）。
+    static func recommendedFileName(_ fileNames: [String]) -> String? {
+        // 只考虑主模型 gguf（排除 mmproj 投影器、imatrix 辅助）
+        let candidates = fileNames.filter {
+            let p = $0.lowercased()
+            return p.hasSuffix(".gguf") && !p.contains("mmproj") && !p.contains("imatrix")
+        }
+        guard !candidates.isEmpty else { return nil }
+        // 全局挑质量最优的那个（同基座多版本时，推荐质量与体积最均衡的档）
+        let best = candidates.min { a, b in
+            let ra = qualityRank(a), rb = qualityRank(b)
+            return ra != rb ? ra < rb : a.count < b.count
+        }
+        return best.map { ($0 as NSString).lastPathComponent }
+    }
 }
