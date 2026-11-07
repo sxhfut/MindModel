@@ -6,6 +6,18 @@ APP="build/MindModel.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp Info.plist "$APP/Contents/Info.plist"
+# 转成二进制 plist：CFBundle 只认 XML/二进制两种格式，JSON 写的 Info.plist
+# 会让系统读不到 CFBundleIdentifier / CFBundleIconFile（签名时 Identifier 退化成哈希、
+# 图标退回通用占位图），而且在 plutil 里看着一切正常，极难排查。
+plutil -convert binary1 "$APP/Contents/Info.plist"
+
+echo "==> 图标"
+# 图标由 Tools/IconGen.swift 生成：改设计后跑 ./make-icon.sh 重建 AppIcon.icns
+if [ -f AppIcon.icns ]; then
+  cp AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+else
+  echo "（缺 AppIcon.icns，先运行 ./make-icon.sh）"
+fi
 
 echo "==> 编译"
 swiftc -O -swift-version 5 \

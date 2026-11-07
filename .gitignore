@@ -9,6 +9,10 @@ ui/node_modules/
 *.dSYM/
 *.app/
 
+# 应用图标：源是 Tools/IconGen.swift，成品 AppIcon.icns 入库（打包必需），
+# 中间产物 AppIcon.iconset/ 由 ./make-icon.sh 现场生成，不入库。
+AppIcon.iconset/
+
 # Tauri 图标：icon.png 是源，icon.ico（Windows）/icon.icns（macOS）是打包必需，
 # 都入库；其余平台尺寸（Android 等）由 cargo tauri icon 按需生成，不入库。
 shells/tauri/src-tauri/icons/*

@@ -148,7 +148,11 @@ macOS 桌面版（SwiftUI，无第三方依赖）：
 
 ```bash
 ./build.sh          # 产出 build/MindModel.app
+
+./make-icon.sh      # 改了图标设计才需要跑：Tools/IconGen.swift → AppIcon.icns
 ```
+
+图标是代码画出来的，不是位图：`Tools/IconGen.swift` 用 Core Graphics 在 1024 坐标系里绘制，一次输出 10 个尺寸的 iconset（16/32/64px 走简化画法：弧线加粗、去掉斜线与节点，否则小尺寸糊成一团），再由 `iconutil` 打包成 `AppIcon.icns` 入库。改配色或造型只改这一个文件。
 
 Rust 核心与命令行：
 
@@ -183,6 +187,9 @@ MindModel/
 │   ├── Advisor.swift    预算/需求/速度/能力分/任务合成
 │   ├── Agent.swift      智能体工具层：读文件/列目录/搜索/写文件/跑命令
 │   ├── HFSearch.swift   在线模型搜索：HuggingFace + 魔搭 GGUF（零依赖 URLSession）
+│   ├── ModelNameDecoder.swift  模型名里的术语解析：参数量/量化/精度/能力后缀
+│   ├── ModelNameViews.swift    术语 chip、词典弹层、本机适配徽章与内存条
+│   ├── OnlineFit.swift  在线模型的本机适配评估：体积/内存/速度/上下文
 │   ├── App.swift        状态、并发、Ollama 交互、agent 循环
 │   └── Views.swift      八个页面
 ├── rust/
@@ -193,9 +200,12 @@ MindModel/
 │   └── browser/         无 GUI 平台的浏览器兜底（mindmodel-serve 本地 HTTP）
 ├── data/models.toml     模型清单单一数据源（79 条）
 ├── tools/gen_models_toml.py  从 Catalog.swift 生成 models.toml
+├── Tools/IconGen.swift  应用图标生成器（Core Graphics，无外部素材）
+├── AppIcon.icns         成品图标（iconset 由 make-icon.sh 现场生成，不入库）
 ├── docs/                界面截图 + GitHub Pages 主页
 ├── DESIGN.md            跨平台设计与算法说明
-└── build.sh
+├── build.sh
+└── make-icon.sh
 ```
 
 ## 已知限制
