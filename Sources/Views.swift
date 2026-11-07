@@ -1762,7 +1762,7 @@ struct HFRow: View {
                     // 本机适配 + 性能表现（没有依据时也明说，不要留空白）
                     if let fit = s.onlineFit(model.modelId) {
                         FitLine(fit: fit, budgetGB: s.budgetGB)
-                        if fit.level == .tooHeavy { FitWarnBar(fit: fit) }
+                        if fit.shouldWarn { FitWarnBar(fit: fit) }
                     } else {
                         FitUnknownLine()
                     }
@@ -1812,7 +1812,7 @@ struct MSRow: View {
                 // 本机适配 + 性能表现（没有依据时也明说，不要留空白）
                 if let fit = s.onlineFit(model.name) {
                     FitLine(fit: fit, budgetGB: s.budgetGB)
-                    if fit.level == .tooHeavy { FitWarnBar(fit: fit) }
+                    if fit.shouldWarn { FitWarnBar(fit: fit) }
                 } else {
                     FitUnknownLine()
                 }
@@ -1876,7 +1876,7 @@ struct ModelDetailSheet: View {
                         FitLine(fit: fit, budgetGB: s.budgetGB)
                         Text(fit.verdict)
                             .font(.system(size: 12))
-                            .foregroundStyle(fit.level == .tooHeavy ? T.bad : .secondary)
+                            .foregroundStyle(fit.shouldWarn ? T.bad : .secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         Text(fitBasis(fit))
                             .font(.system(size: 11))
@@ -2211,7 +2211,7 @@ struct MSFilesSheet: View {
                                              ($0.path, Double($0.size) / 1_073_741_824.0)
                                          }) {
                     FitLine(fit: fit, budgetGB: s.budgetGB)
-                    if fit.level == .tooHeavy { FitWarnBar(fit: fit) }
+                    if fit.shouldWarn { FitWarnBar(fit: fit) }
                 } else if f.isGGUF && !f.isAux {
                     FitUnknownLine(reason: "拿不到这个文件的体积")
                 }
@@ -2460,7 +2460,7 @@ struct HFFilesSheet: View {
                                              ($0.path, Double($0.size) / 1_073_741_824.0)
                                          }) {
                     FitLine(fit: fit, budgetGB: s.budgetGB)
-                    if fit.level == .tooHeavy { FitWarnBar(fit: fit) }
+                    if fit.shouldWarn { FitWarnBar(fit: fit) }
                 } else if f.isGGUF && !f.isAux {
                     FitUnknownLine(reason: "拿不到这个文件的体积")
                 }

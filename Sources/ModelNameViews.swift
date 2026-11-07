@@ -138,14 +138,18 @@ struct TermDictionarySheet: View {    @Environment(\.dismiss) var dismiss
 struct FitBadge: View {
     let fit: OnlineFit
 
+    /// 「偏紧」但连 4K 都装不下时，直接说跑不动——别让徽章跟下面的数字打架。
+    var label: String { fit.noHeadroom ? "跑不动" : fit.level.label }
+    var color: Color { fit.noHeadroom ? T.bad : fitColor(fit.level) }
+
     var body: some View {
-        Text(fit.level.label)
+        Text(label)
             .font(.system(size: 10.5, weight: .semibold))
             .padding(.horizontal, 6).padding(.vertical, 2)
-            .background(fitColor(fit.level).opacity(0.16))
-            .foregroundStyle(fitColor(fit.level))
+            .background(color.opacity(0.16))
+            .foregroundStyle(color)
             .clipShape(Capsule())
-            .overlay(Capsule().strokeBorder(fitColor(fit.level).opacity(0.32), lineWidth: 0.6))
+            .overlay(Capsule().strokeBorder(color.opacity(0.32), lineWidth: 0.6))
             .help("\(fit.verdict)\n\(fit.summary)")
     }
 }
@@ -162,7 +166,7 @@ struct FitGauge: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.primary.opacity(0.10))
                 Capsule()
-                    .fill(fitColor(fit.level))
+                    .fill(fit.noHeadroom ? T.bad : fitColor(fit.level))
                     .frame(width: max(2, w * pct))
             }
         }
@@ -188,7 +192,7 @@ struct FitLine: View {
                 Text(String(format: "· 约 %.0f tok/s · %@", fit.estTokS, fit.speed.label))
                     .font(.system(size: 11, design: .rounded))
                     .foregroundStyle(speedColor(fit.speed))
-            } else if fit.specUnknown && fit.level != .tooHeavy {
+            } else if fit.specUnknown && !fit.shouldWarn {
                 Text("· 速度无法估算")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)

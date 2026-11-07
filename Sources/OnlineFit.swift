@@ -46,9 +46,16 @@ struct OnlineFit {
     /// （paramsB 为 0 是「未知」的哨兵值，不是真的 0B 模型）
     var specUnknown: Bool { paramsB <= 0 }
 
+    /// 连最小档上下文（4K）都装不进 92% 预算——这种「偏紧」其实已经跑不动了。
+    /// 阈值 0.92 与 levelFor 一致：能算出的 maxContextK 为 0 就说明一档都不成立。
+    var noHeadroom: Bool { maxContextK == 0 && ratio > 0.92 }
+
+    /// 是否需要红色警示条：彻底超预算，或「名义上偏紧、实际连 4K 都装不下」。
+    var shouldWarn: Bool { level == .tooHeavy || noHeadroom }
+
     /// 是否值得展示速度估算：嵌入模型没有生成长度，超预算模型根本跑不起来，
     /// 参数量未知时也没有速度可算。
-    var showSpeed: Bool { !isEmbedding && level != .tooHeavy && !specUnknown }
+    var showSpeed: Bool { !isEmbedding && !shouldWarn && !specUnknown }
 
     /// 一行可直接展示的规格说明。
     var summary: String {
@@ -57,6 +64,8 @@ struct OnlineFit {
             s += "；嵌入模型，不做 tok/s 估算"
         } else if level == .tooHeavy {
             s += "；超出本机内存，不做速度估算"
+        } else if noHeadroom {
+            s += "；连 4K 上下文都装不下，做不了速度估算"
         } else if specUnknown {
             s += "；速度无法估算（只知道文件体积，不知道参数量）"
         } else {
@@ -69,6 +78,9 @@ struct OnlineFit {
 
     /// 一句人话结论：内存档位 + 速度体验，两者分开说，避免「装得下」被误读成「用着爽」。
     var verdict: String {
+        if noHeadroom {
+            return String(format: "需要 %.1f GB，连 4K 上下文都超过本机可用内存，本地跑不动；换更小的量化或更小的模型才有戏", needGB)
+        }
         let mem: String
         switch level {
         case .plenty: mem = "内存余量充足"
@@ -91,7 +103,7 @@ struct OnlineFit {
 
     /// 是否「装得下但慢到不实用」——UI 上用警示色区分。
     var slowButFits: Bool {
-        !isEmbedding && !specUnknown && level != .tooHeavy
+        !isEmbedding && !specUnknown && !shouldWarn
             && (speed == .slow || speed == .crawl)
     }
 }
