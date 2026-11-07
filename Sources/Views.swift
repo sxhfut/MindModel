@@ -167,6 +167,7 @@ struct PageStack: View {
             case .bench: BenchView()
             case .chat: ChatView()
             case .agent: AgentView()
+            case .about: AboutView()
             }
             Spacer(minLength: 20)
         }
@@ -295,6 +296,7 @@ struct Header: View {
         case .bench: return "跳过估算，直接让 Ollama 跑一次"
         case .chat: return "用装好的模型直接对话，可带图片"
         case .agent: return "让模型动手：读文件、搜代码、写文件、跑命令"
+        case .about: return "出品单位、负责人、联系方式，以及哪些还没验证"
         }
     }
 }

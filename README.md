@@ -190,6 +190,7 @@ MindModel/
 │   ├── ModelNameDecoder.swift  模型名里的术语解析：参数量/量化/精度/能力后缀
 │   ├── ModelNameViews.swift    术语 chip、词典弹层、本机适配徽章与内存条
 │   ├── OnlineFit.swift  在线模型的本机适配评估：体积/内存/速度/上下文
+│   ├── AboutView.swift  关于 / 出品：单位、负责人、联系方式、未验证清单
 │   ├── App.swift        状态、并发、Ollama 交互、agent 循环
 │   └── Views.swift      八个页面
 ├── rust/
@@ -215,6 +216,19 @@ MindModel/
 - **删除模型只对 Ollama 托管的生效。** 手工放进目录的 GGUF 只提供"在 Finder 中显示"，不做删除——路径归属无法可靠判断。
 - **不下载模型。** 导入是本地文件注册进 Ollama，下载交给 Ollama 自己做。
 - **智能体工具调用依赖模型的 function calling。** 不是所有本地模型都支持；写文件与执行命令默认要用户逐次确认，纯读操作不需要授权。
+
+## 出品与联系
+
+| | |
+|---|---|
+| 出品单位 | 合肥工业大学（Hefei University of Technology, HFUT） |
+| 实验室 | 多模态情感计算与人因工程实验室（Multimodal Affective Computing and Human Factors Engineering Laboratory） |
+| 带领者 | 孙晓 教授（[实验室官网](https://sxhfut.github.io/)原文：「由孙晓教授带领」） |
+| 邮箱 | [sunx@hfut.edu.cn](mailto:sunx@hfut.edu.cn) |
+| 通讯地址 | 安徽省合肥市屯溪路 193 号，合肥工业大学计算机与信息学院 |
+| 在线入口 | [实验室主页](https://sxhfut.github.io/) · [加入与合作](https://sxhfut.github.io/contact/) · [教师主页](https://faculty.hfut.edu.cn/sunxiao/zh_CN/index.htm) · [项目主页](https://sxhfut.github.io/MindModel/) |
+
+以上署名与联系方式照录实验室官网及其 `/contact/` 页；官网未提供电话、邮编、微信公众号，故不列。应用内「关于」页也放了同一套信息。注意「出品」用实验室官网写法，而版权行沿用本项目一直使用的团队署名，两处原文不同，按各自来源分列，未擅自统一。
 
 ## 许可
 

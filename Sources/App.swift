@@ -99,6 +99,7 @@ final class AppState: ObservableObject {
         case bench = "实测基准"
         case chat = "对话"
         case agent = "智能体"
+        case about = "关于"
         var id: String { rawValue }
         /// 英文键，供 `MM_TAB=task` 这类自动化/截图脚本定位页签
         var key: String {
@@ -113,6 +114,7 @@ final class AppState: ObservableObject {
             case .bench: return "bench"
             case .chat: return "chat"
             case .agent: return "agent"
+            case .about: return "about"
             }
         }
         var icon: String {
@@ -127,6 +129,7 @@ final class AppState: ObservableObject {
             case .bench: return "speedometer"
             case .chat: return "bubble.left.and.bubble.right"
             case .agent: return "wrench.and.screwdriver"
+            case .about: return "info.circle"
             }
         }
     }
