@@ -4,6 +4,8 @@
 #
 #   ./make-dmg.sh                 # 用现有 build/MindModel.app 打包（不存在则先 ./build.sh）
 #   ./make-dmg.sh --rebuild       # 强制先重新编译再打包
+#   ./make-dmg.sh --zip           # 额外产出单文件 .app.zip（便于直接传一个文件）
+#   ./make-dmg.sh --rebuild --zip # 两个开关可叠加
 #   OUT=/path/to/x.dmg ./make-dmg.sh   # 自定义输出路径
 #
 # 产物默认 build/MindModel-<版本>.dmg；build/ 已被 .gitignore 忽略，
@@ -13,8 +15,9 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 APP="build/MindModel.app"
+ARGS="${*:-}"
 
-if [[ ! -d "$APP" || "${1:-}" == "--rebuild" ]]; then
+if [[ ! -d "$APP" || "$ARGS" == *--rebuild* ]]; then
     echo "==> 编译应用"
     ./build.sh
 fi
@@ -131,3 +134,16 @@ echo ""
 echo "==> 完成：$(pwd)/${OUT}"
 ls -lh "$OUT" | awk '{print "    体积 " $5}'
 shasum -a 256 "$OUT" | awk '{print "    SHA-256 " $1}'
+
+# --zip：给只想拿一个 .app 文件（不想装 DMG）的人用。
+# --keepParent 保证解压后直接得到 MindModel.app 而不是一堆散文件；
+# --sequesterRsrc 把资源叉收进 __MACOSX，签名所需元数据不丢。
+if [[ "$ARGS" == *--zip* ]]; then
+    ZIP="${OUT%.dmg}.app.zip"
+    echo ""
+    echo "==> 额外生成单文件 app 包"
+    ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
+    unzip -t "$ZIP" >/dev/null
+    echo "    $(pwd)/${ZIP}"
+    ls -lh "$ZIP" | awk '{print "    体积 " $5}'
+fi

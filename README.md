@@ -153,10 +153,14 @@ mindmodel engines                           检测本机推理后端
 macOS 桌面版（SwiftUI，无第三方依赖）：
 
 ```bash
-./build.sh          # 产出 build/MindModel.app
-./make-dmg.sh       # 产出 build/MindModel-<版本>.dmg（拖动安装）
-./make-icon.sh      # 改了图标设计才需要跑：Tools/IconGen.swift → AppIcon.icns
+./build.sh              # 产出可直接双击运行的 build/MindModel.app
+./make-dmg.sh           # 产出 build/MindModel-<版本>.dmg（拖动安装）
+./make-dmg.sh --zip     # 额外产出单文件 build/MindModel-<版本>.app.zip
+./make-icon.sh          # 改了图标设计才需要跑：Tools/IconGen.swift → AppIcon.icns
 ```
+
+**要找能直接运行的程序，就是 `build/MindModel.app`** —— `./build.sh` 每次都会重新生成它，
+也是开发时 `open build/MindModel.app` 启动的那一份。DMG 里装的是它的副本，`.app.zip` 是同一份的单文件打包；三者同源，不要同时改多份。
 
 `swiftc` 以 `-target arm64-apple-macos14.0` 直编，所以产物是 **Apple Silicon 专属、macOS 14+**，Intel Mac 跑不了。`LSMinimumSystemVersion` 也是 14.0。要支持 Intel 需改成 universal 二进制并重编（改 `build.sh` 的 `-target` 加 `x86_64`，或用 `lipo` 合并两份）。
 
@@ -169,7 +173,7 @@ macOS 桌面版（SwiftUI，无第三方依赖）：
 - 生成后跑 `hdiutil verify` 校验 CRC，并**挂载卷逐项核验**可执行文件、Info.plist、图标、快捷方式都在；
 - 输出 `build/MindModel-0.1.0.dmg`（UDZO 压缩只读 / HFS+），打印体积与 SHA-256。
 
-常用参数：`./make-dmg.sh --rebuild` 强制先重新编译；`OUT=/path/x.dmg ./make-dmg.sh` 自定义输出位置。
+常用参数：`./make-dmg.sh --rebuild` 强制先重新编译；`--zip` 额外生成单文件 `.app.zip`（`ditto --keepParent` 打包、解压即得 `MindModel.app`，脚本内用 `unzip -t` 自检）；两个开关可叠加；`OUT=/path/x.dmg ./make-dmg.sh` 自定义输出位置。
 
 **分发限制（别忽略）**：当前是 **ad-hoc 签名、未公证**，没有 Developer ID 证书。别人双击会看到「无法验证开发者」，需右键→「打开」或执行 `xattr -dr com.apple.quarantine /Applications/MindModel.app`。要对实验室外部正式分发，必须先做 Developer ID 签名 + Apple 公证，再重新打包。另外 DMG 每次生成的 SHA-256 都不同（卷创建时间/UUID 不同），内容一致但字节不可复现，属正常。
 
