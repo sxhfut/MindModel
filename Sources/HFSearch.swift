@@ -2,6 +2,29 @@ import Foundation
 
 // MARK: - HuggingFace 在线模型搜索
 
+/// 模型格式过滤（可设置）。GGUF 是本应用能直接导入 Ollama 用的格式；
+/// 「全部格式」会把 safetensors 等原始权重也列出来（供了解/转换，不能直接导入）。
+enum ModelFormat: String, CaseIterable, Identifiable {
+    case ggufOnly = "gguf"
+    case all = "all"
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .ggufOnly: return "仅 GGUF"
+        case .all: return "全部格式"
+        }
+    }
+
+    /// 该格式下是否应包含某个文件（按扩展名粗判）
+    func accepts(fileName: String) -> Bool {
+        if self == .all { return true }
+        let p = fileName.lowercased()
+        return p.hasSuffix(".gguf") || p.hasSuffix(".mmproj")
+    }
+}
+
 /// HuggingFace 上的一条 GGUF 模型搜索结果。
 /// 只用于「在线找模型」——内置目录仍以 data/models.toml 为权威，这里提供的是
 /// 清单之外、社区持续更新的 GGUF 模型入口。
@@ -56,13 +79,15 @@ enum HFSearch {
         return "https://hf-mirror.com/api/models"
     }()
 
-    /// 搜索 GGUF 模型。q 为空时返回热门 GGUF 模型。
-    static func search(_ q: String, limit: Int = 50) async throws -> [HFModel] {
+    /// 搜索模型。q 为空时返回热门模型。format 为 .ggufOnly 时只搜 GGUF，.all 时搜全部格式。
+    static func search(_ q: String, format: ModelFormat = .ggufOnly, limit: Int = 50) async throws -> [HFModel] {
         var comps = URLComponents(string: base)!
-        var items = [URLQueryItem(name: "filter", value: "gguf"),
-                     URLQueryItem(name: "limit", value: String(limit)),
+        var items = [URLQueryItem(name: "limit", value: String(limit)),
                      URLQueryItem(name: "sort", value: "downloads"),
                      URLQueryItem(name: "direction", value: "-1")]
+        if format == .ggufOnly {
+            items.append(URLQueryItem(name: "filter", value: "gguf"))
+        }
         let t = q.trimmingCharacters(in: .whitespaces)
         if !t.isEmpty {
             items.append(URLQueryItem(name: "search", value: t))
@@ -77,8 +102,9 @@ enum HFSearch {
         return try JSONDecoder().decode([HFModel].self, from: data)
     }
 
-    /// 列出某个仓库里的所有 .gguf / .mmproj 文件（含大小），用于给用户看"这个仓库有哪些量化可选"。
-    static func ggufFiles(_ modelId: String) async throws -> [HFFile] {
+    /// 列出某个仓库里的文件（含大小）。format 为 .ggufOnly 时只列 .gguf/.mmproj，
+    /// .all 时列出全部文件（如 safetensors 原始权重）。
+    static func files(_ modelId: String, format: ModelFormat = .ggufOnly) async throws -> [HFFile] {
         let url = URL(string: "https://hf-mirror.com/api/models/\(modelId)/tree/main")!
         let (data, resp) = try await URLSession.shared.data(from: url)
         if let http = resp as? HTTPURLResponse, http.statusCode != 200 {
@@ -88,8 +114,13 @@ enum HFSearch {
         let files = try JSONDecoder().decode([HFFile].self, from: data)
         return files
             .filter { $0.type == "file" }
-            .filter { $0.path.lowercased().hasSuffix(".gguf") || $0.path.lowercased().hasSuffix(".mmproj") }
+            .filter { format.accepts(fileName: $0.path) }
             .sorted { $0.size > $1.size }
+    }
+
+    /// 兼容旧调用：列出 .gguf/.mmproj 文件。
+    static func ggufFiles(_ modelId: String) async throws -> [HFFile] {
+        try await files(modelId, format: .ggufOnly)
     }
 }
 
@@ -134,6 +165,12 @@ struct HFFile: Codable, Identifiable {
     func downloadURL(modelId: String) -> URL? {
         let p = path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? path
         return URL(string: "https://hf-mirror.com/\(modelId)/resolve/main/\(p)")
+    }
+
+    /// 是否 gguf 文件（含 mmproj 投影器）
+    var isGGUF: Bool {
+        let p = path.lowercased()
+        return p.hasSuffix(".gguf") || p.hasSuffix(".mmproj")
     }
 
     /// 是否投影器（mmproj / clip 视觉编码器），不是主模型
@@ -385,11 +422,16 @@ enum MSSearch {
         let Code: Int
     }
 
-    static func search(_ q: String, limit: Int = 50) async throws -> [MSModel] {
+    static func search(_ q: String, format: ModelFormat = .ggufOnly, limit: Int = 50) async throws -> [MSModel] {
         let t = q.trimmingCharacters(in: .whitespaces)
-        // 空查询时搜 "GGUF"；有查询时直接用它，让魔搭返回尽可能多的候选，
-        // 再由 isGGUF / 名称匹配在客户端过滤（避免服务端关键词太窄导致全空）。
-        let name = t.isEmpty ? "GGUF" : t
+        // 空查询：ggufOnly 时搜 "GGUF" 拿热门 GGUF；all 时用通用热门词。
+        // 有查询时直接用它，让魔搭返回尽可能多的候选，再由 format 在客户端过滤。
+        let name: String
+        if !t.isEmpty {
+            name = t
+        } else {
+            name = format == .ggufOnly ? "GGUF" : "大模型"
+        }
         let body: [String: Any] = [
             "Name": name, "PageSize": limit, "PageNumber": 1, "SortBy": "Default"
         ]
@@ -409,9 +451,12 @@ enum MSSearch {
                           userInfo: [NSLocalizedDescriptionKey: "魔搭搜索失败"])
         }
         let all = r.Data.Model.Models.filter { !$0.path.isEmpty && !$0.name.isEmpty }
-        // 优先保留明确是 GGUF 的；若没有，退回按名称包含关键词的全部结果（不硬过滤）
-        let gguf = all.filter { $0.isGGUF }
-        let picked = gguf.isEmpty ? all : gguf
-        return picked.sorted { $0.downloads > $1.downloads }
+        // 按格式过滤：ggufOnly 优先保留 GGUF；all 返回全部
+        if format == .ggufOnly {
+            let gguf = all.filter { $0.isGGUF }
+            let picked = gguf.isEmpty ? all : gguf
+            return picked.sorted { $0.downloads > $1.downloads }
+        }
+        return all.sorted { $0.downloads > $1.downloads }
     }
 }

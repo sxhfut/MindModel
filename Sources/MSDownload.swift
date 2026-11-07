@@ -75,8 +75,8 @@ actor ProgressMeter {
 enum MSDownload {
     static let host = "https://modelscope.cn/api/v1/models"
 
-    /// 列出仓库文件（过滤出 .gguf / .mmproj，按大小降序）。
-    static func listFiles(org: String, name: String) async throws -> [MSFile] {
+    /// 列出仓库文件（format 决定过滤范围，按大小降序）。
+    static func listFiles(org: String, name: String, format: ModelFormat = .ggufOnly) async throws -> [MSFile] {
         let orgEnc = org.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? org
         let nameEnc = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? name
         let urlStr = "\(host)/\(orgEnc)/\(nameEnc)/repo/files?Revision=master&Recursive=true"
@@ -98,7 +98,7 @@ enum MSDownload {
         return w.Data.Files
             .filter { $0.Type == "blob" }
             .map { MSFile(path: $0.Path, size: $0.Size, sha256: $0.Sha256, isLFS: $0.IsLFS ?? false) }
-            .filter { $0.isGGUF }
+            .filter { format.accepts(fileName: $0.path) }
             .sorted { $0.size > $1.size }
     }
 

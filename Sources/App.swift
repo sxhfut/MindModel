@@ -182,6 +182,8 @@ final class AppState: ObservableObject {
     @Published var hfSearched = false
     /// 搜索源：0 = HuggingFace，1 = 魔搭 ModelScope（国内默认）
     @Published var searchSource = 1
+    /// 模型格式过滤（仅 GGUF / 全部格式），可设置并持久化
+    @Published var modelFormat: ModelFormat = .ggufOnly { didSet { saveModelFormat() } }
 
     // 魔搭应用内直下
     /// 当前正在浏览文件的仓库（org/name），非空时展示文件列表弹层
@@ -292,6 +294,14 @@ final class AppState: ObservableObject {
         downloadSegments = UserDefaults.standard.integer(forKey: "mm.segments") == 0
             ? 8 : UserDefaults.standard.integer(forKey: "mm.segments")
         MSDownload.segmentCount = downloadSegments
+        if let fmt = UserDefaults.standard.string(forKey: "mm.format"),
+           let f = ModelFormat(rawValue: fmt) {
+            modelFormat = f
+        }
+    }
+
+    private func saveModelFormat() {
+        UserDefaults.standard.set(modelFormat.rawValue, forKey: "mm.format")
     }
 
     private func saveDownloadSegments() {
@@ -738,8 +748,8 @@ final class AppState: ObservableObject {
         hfSearching = true
         hfError = nil
         Task {
-            async let hf: [HFModel]? = try? HFSearch.search(q, limit: 50)
-            async let ms: [MSModel]? = try? MSSearch.search(q, limit: 50)
+            async let hf: [HFModel]? = try? HFSearch.search(q, format: modelFormat, limit: 50)
+            async let ms: [MSModel]? = try? MSSearch.search(q, format: modelFormat, limit: 50)
             let (hfR, msR) = await (hf, ms)
 
             await MainActor.run {
@@ -815,7 +825,7 @@ final class AppState: ObservableObject {
         msFilesLoading = true
         Task {
             do {
-                let files = try await MSDownload.listFiles(org: model.path, name: model.name)
+                let files = try await MSDownload.listFiles(org: model.path, name: model.name, format: modelFormat)
                 await MainActor.run {
                     self.msFiles = files
                     self.msFilesLoading = false
@@ -850,6 +860,11 @@ final class AppState: ObservableObject {
         // 辅助文件（imatrix/tokenizer）不是模型，禁止下载
         if file.isAux {
             toast = "「\(file.path)」是校准/辅助文件，不是模型，无需下载"
+            return
+        }
+        // 非 GGUF（如 safetensors 原始权重）无法直接导入 Ollama，给明确提示
+        if !file.isGGUF {
+            toast = "「\(file.path)」是原始权重（非 GGUF），需转换后才能导入，本应用暂不支持"
             return
         }
         let dir = Self.downloadDir()
@@ -1040,7 +1055,7 @@ final class AppState: ObservableObject {
     /// 把魔搭文件列表里勾选的文件加入队列。
     func enqueueMSSelected() {
         guard let listing = msListing else { return }
-        let selected = msFiles.filter { msSelected.contains($0.path) && !$0.isAux }
+        let selected = msFiles.filter { msSelected.contains($0.path) && !$0.isAux && $0.isGGUF }
         guard !selected.isEmpty else { toast = "请先勾选要下载的文件"; return }
         let items = selected.compactMap { f -> QueueItem? in
             guard let u = MSDownload.directURL(org: listing.org, name: listing.name, filePath: f.path) else { return nil }
@@ -1054,7 +1069,7 @@ final class AppState: ObservableObject {
     /// 把 HF 文件列表里勾选的文件加入队列。
     func enqueueHFSelected() {
         guard let listing = hfListing else { return }
-        let selected = hfFiles.filter { hfSelected.contains($0.path) && !$0.isAux }
+        let selected = hfFiles.filter { hfSelected.contains($0.path) && !$0.isAux && $0.isGGUF }
         guard !selected.isEmpty else { toast = "请先勾选要下载的文件"; return }
         let items = selected.compactMap { f -> QueueItem? in
             guard let u = f.downloadURL(modelId: listing.modelId) else { return nil }
@@ -1229,7 +1244,7 @@ final class AppState: ObservableObject {
         hfFilesLoading = true
         Task {
             do {
-                let files = try await HFSearch.ggufFiles(modelId)
+                let files = try await HFSearch.files(modelId, format: modelFormat)
                 await MainActor.run {
                     self.hfFiles = files
                     self.hfFilesLoading = false
@@ -1253,6 +1268,11 @@ final class AppState: ObservableObject {
         // 辅助文件（imatrix/tokenizer）不是模型，禁止下载，给出明确提示
         if file.isAux {
             toast = "「\(file.path)」是校准/辅助文件，不是模型，无需下载"
+            return
+        }
+        // 非 GGUF（如 safetensors 原始权重）无法直接导入 Ollama
+        if !file.isGGUF {
+            toast = "「\(file.path)」是原始权重（非 GGUF），需转换后才能导入，本应用暂不支持"
             return
         }
         let dir = Self.downloadDir()

@@ -1363,7 +1363,7 @@ struct OnlineModelsView: View {
         VStack(alignment: .leading, spacing: 12) {
             Card {
                 VStack(alignment: .leading, spacing: 8) {
-                    SectionHead(title: "搜索在线 GGUF 模型",
+                    SectionHead(title: "搜索在线模型",
                                 sub: "清单外的模型也能找。魔搭（国内直连）+ HuggingFace 双源，按下载量排序。")
                     HStack(spacing: 8) {
                         TextField("搜模型名，如 qwen / llama / mistral…", text: $s.hfQuery)
@@ -1372,8 +1372,23 @@ struct OnlineModelsView: View {
                         Button("搜索") { s.searchHF() }
                             .buttonStyle(.borderedProminent).controlSize(.small)
                             .disabled(s.hfSearching)
-                        Button("热门 GGUF") { s.hfQuery = ""; s.searchHF() }
+                        Button("热门") { s.hfQuery = ""; s.searchHF() }
                             .buttonStyle(.bordered).controlSize(.small)
+                        Spacer()
+                    }
+                    // 格式 + 双源切换
+                    HStack(spacing: 8) {
+                        // 格式过滤：仅 GGUF / 全部格式
+                        Picker("", selection: $s.modelFormat) {
+                            ForEach(ModelFormat.allCases) { f in
+                                Text(f.label).tag(f)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(maxWidth: 200)
+                        .onChange(of: s.modelFormat) {
+                            s.searchHF()
+                        }
                         Spacer()
                     }
                     // 双源切换
@@ -1400,7 +1415,7 @@ struct OnlineModelsView: View {
                     if let err = s.hfError {
                         Text(err).font(.system(size: 13)).foregroundStyle(T.bad)
                     }
-                    Text("国内直连魔搭即可搜到大量 GGUF 仓库（含 unsloth / ISTA-DASLab）；HuggingFace 源需能访问 huggingface.co 的网络。下载后到「导入 GGUF」注册即可用，无白名单。")
+                    Text("「仅 GGUF」是本应用能直接导入 Ollama 用的格式；「全部格式」还会列出 safetensors 等原始权重（仅供了解，需转换后才能用）。魔搭直连即可，HuggingFace 源需能访问 huggingface.co 的网络。")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
             }
@@ -1900,7 +1915,8 @@ struct MSFilesSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("选择要下载的 .gguf").font(.system(size: 15, weight: .semibold))
+                    Text(s.modelFormat == .ggufOnly ? "选择要下载的 .gguf" : "选择要下载的文件")
+                        .font(.system(size: 15, weight: .semibold))
                     Text("\(org)/\(name)").font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -1914,7 +1930,9 @@ struct MSFilesSheet: View {
                 }
                 .frame(maxWidth: .infinity, minHeight: 120)
             } else if s.msFiles.isEmpty {
-                Text("该仓库没有 .gguf 文件（可能是 safetensors 原始权重，需自行转换）。")
+                Text(s.modelFormat == .ggufOnly
+                     ? "该仓库没有 .gguf 文件（可能是 safetensors 原始权重，可切「全部格式」查看）。"
+                     : "该仓库没有可用的文件。")
                     .font(.system(size: 13)).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 120)
             } else {
@@ -2023,7 +2041,7 @@ struct MSFilesSheet: View {
     func fileRow(_ f: MSFile) -> some View {
         HStack(spacing: 10) {
             // 多选勾选框（辅助文件不可选）
-            if !f.isAux {
+            if !f.isAux && f.isGGUF {
                 Button {
                     if s.msSelected.contains(f.path) { s.msSelected.remove(f.path) }
                     else { s.msSelected.insert(f.path) }
@@ -2042,6 +2060,8 @@ struct MSFilesSheet: View {
                     Text(f.path).font(.system(size: 13, weight: .medium)).lineLimit(1)
                     if f.isAux {
                         Badge(text: "辅助文件", color: .secondary)
+                    } else if !f.isGGUF {
+                        Badge(text: "原始权重", color: .secondary)
                     } else if f.isProjector {
                         Badge(text: "投影器", color: T.warn)
                     } else {
@@ -2053,6 +2073,9 @@ struct MSFilesSheet: View {
                 if f.isAux {
                     Text("校准/分词辅助文件，无需下载").font(.system(size: 11)).foregroundStyle(.secondary)
                         .lineLimit(1)
+                } else if !f.isGGUF {
+                    Text("原始权重（safetensors 等），需转换后才能导入").font(.system(size: 11)).foregroundStyle(.secondary)
+                        .lineLimit(1)
                 } else if let hint = pairHint(f) {
                     Text(hint).font(.system(size: 11)).foregroundStyle(T.accent.opacity(0.8))
                         .lineLimit(1)
@@ -2060,8 +2083,8 @@ struct MSFilesSheet: View {
             }
             Spacer()
             let isThis = s.msFileProgress[f.path] != nil
-            if f.isAux {
-                // 辅助文件不提供下载
+            if f.isAux || !f.isGGUF {
+                // 辅助文件/原始权重不提供下载
             } else if isThis {
                 // 该文件正在下载：显示其细分进度（含多线程分段的累计）
                 VStack(alignment: .trailing, spacing: 2) {
@@ -2115,7 +2138,8 @@ struct HFFilesSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("选择要下载的 .gguf").font(.system(size: 15, weight: .semibold))
+                    Text(s.modelFormat == .ggufOnly ? "选择要下载的 .gguf" : "选择要下载的文件")
+                        .font(.system(size: 15, weight: .semibold))
                     Text(modelId).font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -2129,7 +2153,9 @@ struct HFFilesSheet: View {
                 }
                 .frame(maxWidth: .infinity, minHeight: 120)
             } else if s.hfFiles.isEmpty {
-                Text("该仓库没有 .gguf 文件（可能是 safetensors 原始权重，需自行转换）。")
+                Text(s.modelFormat == .ggufOnly
+                     ? "该仓库没有 .gguf 文件（可能是 safetensors 原始权重，可切「全部格式」查看）。"
+                     : "该仓库没有可用的文件。")
                     .font(.system(size: 13)).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 120)
             } else {
@@ -2235,7 +2261,7 @@ struct HFFilesSheet: View {
 
     func fileRow(_ f: HFFile) -> some View {
         HStack(spacing: 10) {
-            if !f.isAux {
+            if !f.isAux && f.isGGUF {
                 Button {
                     if s.hfSelected.contains(f.path) { s.hfSelected.remove(f.path) }
                     else { s.hfSelected.insert(f.path) }
@@ -2254,6 +2280,8 @@ struct HFFilesSheet: View {
                     Text(f.path).font(.system(size: 13, weight: .medium)).lineLimit(1)
                     if f.isAux {
                         Badge(text: "辅助文件", color: .secondary)
+                    } else if !f.isGGUF {
+                        Badge(text: "原始权重", color: .secondary)
                     } else if f.isProjector {
                         Badge(text: "投影器", color: T.warn)
                     } else {
@@ -2264,6 +2292,9 @@ struct HFFilesSheet: View {
                 if f.isAux {
                     Text("校准/分词辅助文件，无需下载").font(.system(size: 11)).foregroundStyle(.secondary)
                         .lineLimit(1)
+                } else if !f.isGGUF {
+                    Text("原始权重（safetensors 等），需转换后才能导入").font(.system(size: 11)).foregroundStyle(.secondary)
+                        .lineLimit(1)
                 } else if let hint = pairHint(f) {
                     Text(hint).font(.system(size: 11)).foregroundStyle(T.accent.opacity(0.8))
                         .lineLimit(1)
@@ -2271,8 +2302,8 @@ struct HFFilesSheet: View {
             }
             Spacer()
             let isThis = s.hfFileProgress[f.path] != nil
-            if f.isAux {
-                // 辅助文件不提供下载
+            if f.isAux || !f.isGGUF {
+                // 辅助文件/原始权重不提供下载
             } else if isThis {
                 VStack(alignment: .trailing, spacing: 2) {
                     ProgressView().controlSize(.small)
