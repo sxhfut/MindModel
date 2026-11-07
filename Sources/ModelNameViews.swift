@@ -75,8 +75,7 @@ struct NameDecodeLine: View {
 }
 
 /// 完整术语词典弹层：按类别分组列出所有术语及其解释。
-struct TermDictionarySheet: View {
-    @Environment(\.dismiss) var dismiss
+struct TermDictionarySheet: View {    @Environment(\.dismiss) var dismiss
 
     private var grouped: [(TermKind, [TermEntry])] {
         let order: [TermKind] = [.capability, .quant, .precision, .other]
@@ -130,5 +129,111 @@ struct TermDictionarySheet: View {
         }
         .padding(18)
         .frame(width: 560, height: 520)
+    }
+}
+
+// MARK: - 本机适配与性能预估 UI
+
+/// 适配档位徽章（余量充足 / 流畅 / 可运行 / 偏紧 / 超出预算）。
+struct FitBadge: View {
+    let fit: OnlineFit
+
+    var body: some View {
+        Text(fit.level.label)
+            .font(.system(size: 10.5, weight: .semibold))
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(fitColor(fit.level).opacity(0.16))
+            .foregroundStyle(fitColor(fit.level))
+            .clipShape(Capsule())
+            .overlay(Capsule().strokeBorder(fitColor(fit.level).opacity(0.32), lineWidth: 0.6))
+            .help("\(fit.verdict)\n\(fit.summary)")
+    }
+}
+
+/// 内存占用条：本机预算为底，本模型所需为填充。
+struct FitGauge: View {
+    let fit: OnlineFit
+    let budgetGB: Double
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            let pct = min(1.0, max(0.0, fit.needGB / max(1.0, budgetGB)))
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.primary.opacity(0.10))
+                Capsule()
+                    .fill(fitColor(fit.level))
+                    .frame(width: max(2, w * pct))
+            }
+        }
+        .frame(width: 56, height: 4)
+        .help(String(format: "本模型约需 %.1f GB / 本机可用 %.0f GB", fit.needGB, budgetGB))
+    }
+}
+
+/// 一行完整的「本机适配 + 性能表现」说明。
+/// 例：`[流畅] ▬▬▬ 需 9.2GB / 128GB · 估 42 tok/s · 可开 64K`
+struct FitLine: View {
+    let fit: OnlineFit
+    let budgetGB: Double
+
+    var body: some View {
+        HStack(spacing: 6) {
+            FitBadge(fit: fit)
+            FitGauge(fit: fit, budgetGB: budgetGB)
+            Text(String(format: "需 %.1f / %.0f GB", fit.needGB, budgetGB))
+                .font(.system(size: 11, design: .rounded))
+                .foregroundStyle(.secondary)
+            if fit.showSpeed {
+                Text(String(format: "· 约 %.0f tok/s · %@", fit.estTokS, fit.speed.label))
+                    .font(.system(size: 11, design: .rounded))
+                    .foregroundStyle(speedColor(fit.speed))
+            }
+            if fit.maxContextK > 0 {
+                Text("· 可开 \(fit.maxContextK)K")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            if fit.shards > 1 {
+                Text("· \(fit.shards) 片合计")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .help("分片模型的单片体积不等于模型体积，这里已按总片数合并估算")
+            }
+            if !fit.exactWeight || !fit.fromCatalog {
+                Text("· 估算")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary.opacity(0.7))
+                    .help(fit.exactWeight
+                          ? "体积取自真实文件大小；KV/速度按参数量推算"
+                          : "体积与速度均按模型名推算，实际以下载后为准")
+            }
+        }
+    }
+
+    func speedColor(_ g: SpeedGrade) -> Color {
+        switch g {
+        case .fast: return T.good
+        case .ok: return Color(red: 0.42, green: 0.70, blue: 0.96)
+        case .slow: return T.warn
+        case .crawl: return T.bad
+        }
+    }
+}
+
+/// 超出预算时的醒目提示条。
+struct FitWarnBar: View {
+    let fit: OnlineFit
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 10))
+            Text("需要 \(String(format: "%.1f", fit.needGB)) GB，超出本机可用内存，本地跑不动")
+                .font(.system(size: 11))
+        }
+        .foregroundStyle(T.bad)
+        .padding(.horizontal, 7).padding(.vertical, 3)
+        .background(T.bad.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 }

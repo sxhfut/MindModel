@@ -12,7 +12,7 @@ swiftc -O -swift-version 5 \
   -target arm64-apple-macos14.0 \
   Sources/Probe.swift Sources/Catalog.swift Sources/GGUF.swift Sources/Advisor.swift \
   Sources/Agent.swift Sources/HFSearch.swift Sources/MSDownload.swift Sources/App.swift Sources/Views.swift \
-  Sources/ModelNameDecoder.swift Sources/ModelNameViews.swift \
+  Sources/ModelNameDecoder.swift Sources/ModelNameViews.swift Sources/OnlineFit.swift \
   -o "$APP/Contents/MacOS/MindModel"
 
 echo "==> 签名（ad-hoc）"

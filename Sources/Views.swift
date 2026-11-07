@@ -1408,6 +1408,12 @@ struct OnlineModelsView: View {
                         }
                         .pickerStyle(.menu)
                         .frame(maxWidth: 100)
+                        // 只看跑得动的
+                        Toggle(isOn: $s.fitOnly) {
+                            Text("只看跑得动的").font(.system(size: 12))
+                        }
+                        .toggleStyle(.checkbox)
+                        .help("隐藏需超过本机可用内存的模型")
                     }
                     // 双源切换
                     HStack(spacing: 8) {
@@ -1433,7 +1439,27 @@ struct OnlineModelsView: View {
                     if let err = s.hfError {
                         Text(err).font(.system(size: 13)).foregroundStyle(T.bad)
                     }
+                    // 本机基准：适配与速度估算都以此为准
+                    HStack(spacing: 10) {
+                        Label("\(s.hw.chip)", systemImage: "cpu")
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                        Label(String(format: "可用 %.0f GB", s.budgetGB), systemImage: "memorychip")
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                        if let bw = s.bandwidth {
+                            Label(String(format: "带宽 %.0f GB/s", bw), systemImage: "speedometer")
+                                .font(.system(size: 11)).foregroundStyle(.secondary)
+                        } else {
+                            Label("带宽待测", systemImage: "speedometer")
+                                .font(.system(size: 11)).foregroundStyle(.secondary)
+                        }
+                        Label("评估上下文 \(s.contextTokens / 1024)K", systemImage: "text.alignleft")
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .help("每个模型下方的「适配/性能」都按这台机器的可用内存、实测带宽和当前上下文估算")
                     Text("「仅 GGUF」是本应用能直接导入 Ollama 用的格式；「全部格式」还会列出 safetensors 等原始权重（仅供了解，需转换后才能用）。魔搭直连即可，HuggingFace 源需能访问 huggingface.co 的网络。")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text("每个模型下方那行「适配 / tok/s」是按本机可用内存、实测带宽和当前上下文算的：内存档位看「需多少 GB 占预算多少」，速度档位看 tok/s（≥25 跟手，12–25 可用，6–12 偏慢，<6 很慢）。名字里没写参数量的模型无法估算。误差约 ±30%，下载后实测最准。")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
             }
@@ -1453,7 +1479,7 @@ struct OnlineModelsView: View {
             if s.searchSource == 1 {
                 if !s.msResultsFiltered.isEmpty {
                     SectionHead(title: "魔搭（\(s.msResultsFiltered.count) 个）",
-                                sub: "按下载量排序 · 点「下载」直接下到本地，无需跳转")
+                                sub: "按\(s.sortOrder.label)排序 · 点「下载」直接下到本地，无需跳转")
                     ForEach(s.msResultsFiltered) { m in MSRow(model: m) }
                 } else if s.hfSearched && !s.hfSearching {
                     emptyCard()
@@ -1461,7 +1487,7 @@ struct OnlineModelsView: View {
             } else {
                 if !s.hfResultsFiltered.isEmpty {
                     SectionHead(title: "HuggingFace（\(s.hfResultsFiltered.count) 个）",
-                                sub: "按下载量排序 · 点「下载」走 huggingface-cli，或「详情」手动下")
+                                sub: "按\(s.sortOrder.label)排序 · 点「下载」走 huggingface-cli，或「详情」手动下")
                     ForEach(s.hfResultsFiltered) { m in HFRow(model: m) }
                 } else if s.hfSearched && !s.hfSearching {
                     emptyCard()
@@ -1666,8 +1692,16 @@ struct OnlineModelsView: View {
 
     func emptyCard() -> some View {
         Card {
-            Text("没有结果。换个关键词，或点「热门 GGUF」看当前社区最火的模型。")
-                .font(.system(size: 13)).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 5) {
+                Text(s.fitOnly
+                     ? "没有结果。可能是「只看跑得动的」把结果都过滤掉了——取消那个勾选再看。"
+                     : "没有结果。换个关键词，或点「热门」看当前社区最火的模型。")
+                    .font(.system(size: 13)).foregroundStyle(.secondary)
+                if s.paramFilter != .all {
+                    Text("当前参数量筛选：\(s.paramFilter.label)，也会一起过滤结果。")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+            }
         }
     }
 }
@@ -1725,6 +1759,11 @@ struct HFRow: View {
                     }
                     // 名字术语解读（参数量/量化/能力，hover 看解释）
                     NameDecodeLine(name: model.modelId)
+                    // 本机适配 + 性能表现
+                    if let fit = s.onlineFit(model.modelId) {
+                        FitLine(fit: fit, budgetGB: s.budgetGB)
+                        if fit.level == .tooHeavy { FitWarnBar(fit: fit) }
+                    }
                     // 一句话简介（本地从 modelId/tags 推断）
                     if !oneLineIntro.isEmpty {
                         Text(oneLineIntro)
@@ -1768,6 +1807,11 @@ struct MSRow: View {
                     .lineLimit(1)
                 // 名字术语解读（参数量/量化/能力，hover 看解释）
                 NameDecodeLine(name: model.name)
+                // 本机适配 + 性能表现
+                if let fit = s.onlineFit(model.name) {
+                    FitLine(fit: fit, budgetGB: s.budgetGB)
+                    if fit.level == .tooHeavy { FitWarnBar(fit: fit) }
+                }
                 // 一句话简介（本地推断）
                 if !model.oneLineIntro.isEmpty {
                     Text(model.oneLineIntro)
@@ -1819,6 +1863,24 @@ struct ModelDetailSheet: View {
                 }
                 Spacer()
                 Button("关闭") { dismiss() }.buttonStyle(.bordered).controlSize(.small)
+            }
+
+            // 本机适配：纯本地计算，进详情就能看到，不用等网络
+            if let fit = s.onlineFit(model.name) {
+                detailBlock("本机能不能跑 · 跑起来什么样") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        FitLine(fit: fit, budgetGB: s.budgetGB)
+                        Text(fit.verdict)
+                            .font(.system(size: 12))
+                            .foregroundStyle(fit.level == .tooHeavy ? T.bad : .secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(fitBasis(fit))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary.opacity(0.85))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Divider()
             }
 
             if s.detailLoading {
@@ -1925,6 +1987,23 @@ struct ModelDetailSheet: View {
             Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
             content()
         }
+    }
+
+    /// 适配结论的依据，写清「数字是怎么来的」，方便核对。
+    func fitBasis(_ f: OnlineFit) -> String {
+        let moe = f.activeB < f.paramsB * 0.95
+            ? "（MoE，每 token 只激活约 \(fmtParams(f.activeB))）"
+            : ""
+        let src = f.fromCatalog ? "对齐内置清单体积" : "按 0.55×参数量推算 Q4 体积"
+        let shard = f.shards > 1 ? "，\(f.shards) 个分片合计" : ""
+        return "依据：\(fmtParams(f.paramsB)) 参数\(moe)，权重约 \(String(format: "%.1f", f.weightGB)) GB（\(src)\(shard)）；"
+            + "加 KV cache 与运行时共 \(String(format: "%.1f", f.needGB)) GB，本机可用 \(String(format: "%.0f", s.budgetGB)) GB。"
+            + "速度按实测带宽 \(s.bandwidth.map { String(format: "%.0f GB/s", $0) } ?? "未知") 推算，实际以下载后实测为准。"
+    }
+
+    /// 参数量文案：小于 10B 保留一位小数，避免 0.5B 显示成 0B。
+    func fmtParams(_ b: Double) -> String {
+        b >= 10 ? String(format: "%.0fB", b) : String(format: "%.1fB", b)
     }
 }
 
@@ -2104,10 +2183,14 @@ struct MSFilesSheet: View {
                 Text(f.sizeGB).font(.system(size: 12)).foregroundStyle(.secondary)
                 // 文件名术语解读（量化/精度/能力，hover 看解释）
                 NameDecodeLine(name: f.path)
-                // 体积预估（参数量×量化精度），有明确规格时显示「约 N GB」
-                if let est = ModelNameDecoder.estimateText(f.path) {
-                    Text("\(est) · 估算").font(.system(size: 11)).foregroundStyle(.secondary)
-                        .lineLimit(1)
+                // 本机适配 + 性能（体积取真实文件大小；分片自动合并各片）
+                if f.isGGUF && !f.isAux,
+                   let fit = s.onlineFit(f.path,
+                                         siblings: s.msFiles.map {
+                                             ($0.path, Double($0.size) / 1_073_741_824.0)
+                                         }) {
+                    FitLine(fit: fit, budgetGB: s.budgetGB)
+                    if fit.level == .tooHeavy { FitWarnBar(fit: fit) }
                 }
                 // 配对提示：点这个文件会带上谁（辅助文件无配对，直接提示不可下载）
                 if f.isAux {
@@ -2347,10 +2430,14 @@ struct HFFilesSheet: View {
                 Text(f.sizeGB).font(.system(size: 12)).foregroundStyle(.secondary)
                 // 文件名术语解读（量化/精度/能力，hover 看解释）
                 NameDecodeLine(name: f.path)
-                // 体积预估（参数量×量化精度）
-                if let est = ModelNameDecoder.estimateText(f.path) {
-                    Text("\(est) · 估算").font(.system(size: 11)).foregroundStyle(.secondary)
-                        .lineLimit(1)
+                // 本机适配 + 性能（体积取真实文件大小；分片自动合并各片）
+                if f.isGGUF && !f.isAux,
+                   let fit = s.onlineFit(f.path,
+                                         siblings: s.hfFiles.map {
+                                             ($0.path, Double($0.size) / 1_073_741_824.0)
+                                         }) {
+                    FitLine(fit: fit, budgetGB: s.budgetGB)
+                    if fit.level == .tooHeavy { FitWarnBar(fit: fit) }
                 }
                 if f.isAux {
                     Text("校准/分词辅助文件，无需下载").font(.system(size: 11)).foregroundStyle(.secondary)

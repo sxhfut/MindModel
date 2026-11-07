@@ -188,6 +188,8 @@ final class AppState: ObservableObject {
     @Published var paramFilter: ParamFilter = .all
     /// 结果排序方式
     @Published var sortOrder: SortOrder = .downloads
+    /// 只显示本机跑得动的模型
+    @Published var fitOnly = false
 
     // 魔搭应用内直下
     /// 当前正在浏览文件的仓库（org/name），非空时展示文件列表弹层
@@ -313,6 +315,12 @@ final class AppState: ObservableObject {
     /// 魔搭搜索结果：先按参数量筛选，再按排序方式排列（供 UI 消费，不落盘）。
     var msResultsFiltered: [MSModel] {
         var list = msResults.filter { paramFilter.accepts(ModelNameDecoder.paramsB($0.name)) }
+        if fitOnly {
+            list = list.filter { m in
+                guard let f = onlineFit(m.name) else { return true }  // 规格不明的不隐藏
+                return f.level != .tooHeavy
+            }
+        }
         if sortOrder == .params {
             list.sort {
                 let a = ModelNameDecoder.paramsB($0.name) ?? -1
@@ -326,6 +334,12 @@ final class AppState: ObservableObject {
     /// HuggingFace 搜索结果：同上。
     var hfResultsFiltered: [HFModel] {
         var list = hfResults.filter { paramFilter.accepts(ModelNameDecoder.paramsB($0.modelId)) }
+        if fitOnly {
+            list = list.filter { m in
+                guard let f = onlineFit(m.modelId) else { return true }
+                return f.level != .tooHeavy
+            }
+        }
         if sortOrder == .params {
             list.sort {
                 let a = ModelNameDecoder.paramsB($0.modelId) ?? -1
@@ -462,6 +476,24 @@ final class AppState: ObservableObject {
                 contextTokens: contextTokens,
                 benchmarks: benchmarks,
                 ctxOptions: ctxOptions)
+    }
+
+    /// 在线模型的「本机适配 + 性能」评估（纯逻辑，见 OnlineFit.swift）。
+    /// - Parameters:
+    ///   - weightGB: 已知的真实权重体积（非分片场景）
+    ///   - siblings: 同仓库全部文件（含本文件），用于把分片模型的各片体积合并
+    func onlineFit(_ name: String, weightGB: Double? = nil,
+                   siblings: [(path: String, sizeGB: Double)]? = nil) -> OnlineFit? {
+        var w = weightGB
+        if let sib = siblings {
+            w = OnlineFitEngine.totalWeightGB(name, siblings: sib)
+        }
+        return OnlineFitEngine.evaluate(name: name,
+                                        weightGB: w,
+                                        budgetGB: budgetGB,
+                                        bandwidth: bandwidth ?? 0,
+                                        context: contextTokens,
+                                        benchmarks: benchmarks)
     }
 
     @Published var purpose: Purpose = .writing

@@ -196,8 +196,20 @@ enum ModelNameDecoder {
         return low
     }
 
-    /// 量化精度 → 质量等级（用于「推荐版本」排序，值越小越推荐）。
-    /// 推荐优先级：Q4_K_M ≈ Q5_K_M > Q6 > Q8 > Q5 > Q4 > FP16 > 过度压缩。
+    /// 解析分片 GGUF：`xxx-00001-of-00004.gguf` → (index: 1, total: 4)。
+    /// 分片文件单片体积不等于模型体积，适配判断必须乘回总片数，否则会把 235B 误判成「跑得动」。
+    static func shardInfo(_ name: String) -> (index: Int, total: Int)? {
+        let pattern = #"(\d{3,5})-of-(\d{3,5})"#
+        guard let re = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
+        let range = NSRange(name.startIndex..., in: name)
+        guard let m = re.firstMatch(in: name, range: range),
+              let r1 = Range(m.range(at: 1), in: name),
+              let r2 = Range(m.range(at: 2), in: name),
+              let idx = Int(name[r1]), let total = Int(name[r2]), total > 1 else { return nil }
+        return (idx, total)
+    }
+
+    /// 量化精度 → 质量等级（用于「推荐版本」排序，值越小越推荐）。    /// 推荐优先级：Q4_K_M ≈ Q5_K_M > Q6 > Q8 > Q5 > Q4 > FP16 > 过度压缩。
     static func qualityRank(_ name: String) -> Int {
         let low = name.lowercased()
         if low.contains("q4_k_m") || low.contains("q5_k_m") { return 0 } // 均衡首选
