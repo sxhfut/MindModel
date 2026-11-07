@@ -1441,6 +1441,9 @@ struct OnlineModelsView: View {
         .sheet(item: $s.hfListing) { listing in
             HFFilesSheet(modelId: listing.modelId)
         }
+        .sheet(item: $s.detailModel) { m in
+            ModelDetailSheet(model: m)
+        }
     }
 
     /// 断点续传区：列出磁盘上未下完的文件，一键继续或删除。
@@ -1645,6 +1648,21 @@ struct HFRow: View {
             || low.contains("minicpm-v") || low.contains("pixtral")
     }
 
+    /// 本地推断的一句话简介。
+    var oneLineIntro: String {
+        let low = model.modelId.lowercased()
+        var parts: [String] = []
+        if isVision { parts.append("视觉多模态理解") }
+        if low.contains("instruct") || low.contains("chat") { parts.append("指令微调对话") }
+        if low.contains("reasoning") || low.contains("r1") || low.contains("deepseek") { parts.append("推理增强") }
+        if low.contains("coder") || low.contains("code") { parts.append("代码生成") }
+        if low.contains("embed") || low.contains("bge") { parts.append("文本嵌入") }
+        if parts.isEmpty {
+            return model.isGGUF ? "GGUF 量化模型（点「详情」看网页介绍）" : ""
+        }
+        return parts.joined(separator: " · ")
+    }
+
     var body: some View {
         Card(pad: 11) {
             HStack(spacing: 12) {
@@ -1668,6 +1686,11 @@ struct HFRow: View {
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                         Label("\(model.likes) 赞", systemImage: "heart")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
+                    }
+                    // 一句话简介（本地从 modelId/tags 推断）
+                    if !oneLineIntro.isEmpty {
+                        Text(oneLineIntro)
+                            .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(2)
                     }
                 }
                 Spacer(minLength: 8)
@@ -1705,6 +1728,13 @@ struct MSRow: View {
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                // 一句话简介（本地推断）
+                if !model.oneLineIntro.isEmpty {
+                    Text(model.oneLineIntro)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
                 // 评价 + 体积 + 下载量
                 HStack(spacing: 12) {
                     if model.stars > 0 {
@@ -1723,11 +1753,137 @@ struct MSRow: View {
                 Spacer()
                 Button("下载") { s.listMSFiles(model) }
                     .buttonStyle(.borderedProminent).controlSize(.small)
-                Button("详情") {
-                    if let u = model.pageURL { NSWorkspace.shared.open(u) }
-                }
-                .buttonStyle(.bordered).controlSize(.small)
+                Button("详情") { s.openModelDetail(model) }
+                    .buttonStyle(.bordered).controlSize(.small)
             }
+        }
+    }
+}
+
+/// 模型详情弹层：展示「这模型是什么、有什么特点、怎么来的」。
+/// 点「详情」时异步抓取魔搭详情 API（README 摘要 / 架构 / 相关论文 / 组织）。
+struct ModelDetailSheet: View {
+    @EnvironmentObject var s: AppState
+    @Environment(\.dismiss) var dismiss
+    let model: MSModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // 标题栏
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(model.chineseName.isEmpty ? model.name : model.chineseName)
+                        .font(.system(size: 16, weight: .semibold))
+                    Text("\(model.path)/\(model.name)")
+                        .font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("关闭") { dismiss() }.buttonStyle(.bordered).controlSize(.small)
+            }
+
+            if s.detailLoading {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("正在加载模型详情…").font(.system(size: 13)).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 200)
+            } else if let d = s.modelDetail {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        // 一句话简介
+                        if !d.oneLineSummary.isEmpty {
+                            detailBlock("这是什么") {
+                                Text(d.oneLineSummary).font(.system(size: 13))
+                            }
+                        }
+                        // 组织 / 作者（怎么来的）
+                        if !d.organization.isEmpty {
+                            detailBlock("发布组织") {
+                                Text(d.organization).font(.system(size: 13))
+                            }
+                        }
+                        // 架构
+                        if !d.architectures.isEmpty {
+                            detailBlock("模型架构") {
+                                Text(d.architectures.joined(separator: " · ")).font(.system(size: 13))
+                            }
+                        }
+                        // 能力任务
+                        if !d.tasks.isEmpty {
+                            detailBlock("能力任务") {
+                                HStack(spacing: 6) {
+                                    ForEach(d.tasks, id: \.self) { t in
+                                        Badge(text: t, color: T.accent)
+                                    }
+                                }
+                            }
+                        }
+                        // 相关论文
+                        if !d.arxivIds.isEmpty {
+                            detailBlock("相关论文") {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    ForEach(d.arxivIds, id: \.self) { aid in
+                                        if let u = URL(string: "https://arxiv.org/abs/\(aid)") {
+                                            Button {
+                                                NSWorkspace.shared.open(u)
+                                            } label: {
+                                                Label("arXiv:\(aid)", systemImage: "doc.text")
+                                                    .font(.system(size: 12))
+                                            }
+                                            .buttonStyle(.plain)
+                                            .foregroundStyle(T.accent)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        // README 摘要
+                        if !d.readmeSummary.isEmpty {
+                            detailBlock("模型介绍（README 摘要）") {
+                                Text(d.readmeSummary)
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(.primary.opacity(0.9))
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        // 数据
+                        HStack(spacing: 14) {
+                            Label("\(d.downloads) 下载", systemImage: "arrow.down.circle")
+                                .font(.system(size: 12)).foregroundStyle(.secondary)
+                            if d.stars > 0 {
+                                Label("\(d.stars)", systemImage: "star.fill")
+                                    .font(.system(size: 12)).foregroundStyle(T.warn)
+                            }
+                            Badge(text: d.license, color: .secondary)
+                        }
+                    }
+                    .padding(.bottom, 8)
+                }
+            } else {
+                Text("加载失败，点「在网页查看」打开模型主页。")
+                    .font(.system(size: 13)).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 200)
+            }
+
+            // 底部操作
+            HStack {
+                Button("下载此模型") { s.listMSFiles(model); dismiss() }
+                    .buttonStyle(.borderedProminent).controlSize(.small)
+                Spacer()
+                if let u = model.pageURL {
+                    Button("在网页查看") { NSWorkspace.shared.open(u) }
+                        .buttonStyle(.bordered).controlSize(.small)
+                }
+            }
+        }
+        .padding(18)
+        .frame(width: 560, height: 520)
+    }
+
+    func detailBlock(_ title: String, @ViewBuilder _ content: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+            content()
         }
     }
 }

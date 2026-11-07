@@ -212,6 +212,11 @@ final class AppState: ObservableObject {
     @Published var msSelected: Set<String> = []
     /// 文件列表多选——HF
     @Published var hfSelected: Set<String> = []
+    /// 正在查看详情的模型（非空时弹出详情层）
+    @Published var detailModel: MSModel?
+    /// 详情内容（点详情后异步加载）
+    @Published var modelDetail: ModelDetail?
+    @Published var detailLoading = false
     /// 已完成下载的历史清单
     @Published var downloadHistory: [HistoryRecord] = []
     /// 并发分段数（持久化到 UserDefaults，可在设置里调）
@@ -1058,6 +1063,23 @@ final class AppState: ObservableObject {
         }
         enqueueDownloads(items)
         hfSelected.removeAll()
+    }
+
+    /// 打开模型详情弹层，异步抓取详情。
+    func openModelDetail(_ m: MSModel) {
+        detailModel = m
+        modelDetail = nil
+        detailLoading = true
+        Task {
+            let d = await MSDetail.fetch(path: m.path, name: m.name)
+            await MainActor.run {
+                self.modelDetail = d
+                self.detailLoading = false
+                if d == nil {
+                    self.toast = "无法加载模型详情（可能网络受限）"
+                }
+            }
+        }
     }
 
     /// 启动队列处理：顺序下载，一个完成自动下一个。

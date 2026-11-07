@@ -192,6 +192,33 @@ struct MSModel: Identifiable, Codable {
         return String(format: "%.0f MB", Double(storageSize) / 1_048_576.0)
     }
 
+    /// 本地推断的一句话简介：从 tasks 中文名 + 模型类型拼出「这是什么模型」。
+    /// 详情页还有更全的 README 摘要。
+    var oneLineIntro: String {
+        var parts: [String] = []
+        // tasks 里带中文名（"image-text-to-text" 之类英文名不用，只取有意义的中文）
+        for t in tasks {
+            let low = t.lowercased()
+            if low.contains("image-text-to-text") || low.contains("multi-modal") || low.contains("vision") {
+                parts.append("视觉多模态理解")
+            } else if low.contains("text-generation") || low.contains("chat") || low.contains("conversational") {
+                parts.append("对话文本生成")
+            } else if low.contains("embedding") {
+                parts.append("文本嵌入")
+            }
+        }
+        if modelType.contains(where: { $0.lowercased().contains("vl") }) && !parts.contains("视觉多模态理解") {
+            parts.append("视觉多模态理解")
+        }
+        // 去重保序
+        var seen = Set<String>()
+        let uniq = parts.filter { seen.insert($0).inserted }
+        if uniq.isEmpty {
+            return isGGUF ? "GGUF 量化模型，点「详情」查看完整介绍" : "点「详情」查看完整介绍"
+        }
+        return uniq.joined(separator: " · ")
+    }
+
     enum CodingKeys: String, CodingKey {
         case path = "Path", name = "Name", downloads = "Downloads",
              license = "License", createdTime = "CreatedTime",
@@ -231,6 +258,114 @@ struct MSTask: Codable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
         chineseName = try c.decodeIfPresent(String.self, forKey: .chineseName) ?? ""
+    }
+}
+
+// MARK: - 模型详情（点「详情」时抓取，用于展示「这模型是什么/怎么来的」）
+
+/// 一个模型的详情信息。从魔搭详情 API 提取，供下载前了解模型特点。
+struct ModelDetail {
+    let chineseName: String
+    let organization: String    // 组织名（如「千问」）
+    let architectures: [String] // 架构
+    let tasks: [String]         // 任务中文名
+    let arxivIds: [String]      // 相关论文 arxiv ID
+    let readmeSummary: String   // README 摘要（去 HTML 的前若干段）
+    let license: String
+    let downloads: Int
+    let stars: Int
+    let pageURL: URL?
+
+    /// 一句话简介：本地从任务/架构推断的「这是什么模型」。优先中文任务名，架构英文名作兜底。
+    var oneLineSummary: String {
+        var parts: [String] = []
+        if !tasks.isEmpty {
+            parts.append(contentsOf: tasks)
+        }
+        if parts.isEmpty, let arch = architectures.first, !arch.isEmpty {
+            parts.append(arch)
+        }
+        if parts.isEmpty {
+            return "暂无简介，点「在网页查看」了解详情"
+        }
+        return parts.joined(separator: " · ")
+    }
+}
+
+/// 魔搭详情 API 客户端。点「详情」时按需抓取，不阻塞搜索列表。
+enum MSDetail {
+    static func fetch(path: String, name: String) async -> ModelDetail? {
+        let p = path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? path
+        let n = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? name
+        guard let url = URL(string: "https://modelscope.cn/api/v1/models/\(p)/\(n)") else { return nil }
+        do {
+            let (data, resp) = try await URLSession.shared.data(from: url)
+            guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else { return nil }
+            let d = try JSONDecoder().decode(DetailResponse.self, from: data)
+            return d.model.toModelDetail(path: path, name: name)
+        } catch {
+            return nil
+        }
+    }
+}
+
+/// 详情 API 返回的原始结构（只解码需要的字段，其余忽略）。
+struct DetailResponse: Codable {
+    struct DetailData: Codable {
+        let ChineseName: String?
+        let ReadMeContent: String?
+        let Architectures: [String]?
+        let Tasks: [MSTask]?
+        let RelatedArxivId: [String]?
+        let Organization: Org?
+        let License: String?
+        let Downloads: Int?
+        let Stars: Int?
+        struct Org: Codable {
+            let FullName: String?
+        }
+    }
+    let Data: DetailData
+
+    var model: DetailData { Data }
+}
+
+extension DetailResponse.DetailData {
+    func toModelDetail(path: String, name: String) -> ModelDetail {
+        let readme = ReadMeContent ?? ""
+        let summary = Self.summarize(readme)
+        let taskNames = (Tasks ?? []).map { $0.chineseName.isEmpty ? $0.name : $0.chineseName }
+        return ModelDetail(
+            chineseName: ChineseName ?? "",
+            organization: Organization?.FullName ?? "",
+            architectures: Architectures ?? [],
+            tasks: taskNames,
+            arxivIds: RelatedArxivId ?? [],
+            readmeSummary: summary,
+            license: License ?? "未知",
+            downloads: Downloads ?? 0,
+            stars: Stars ?? 0,
+            pageURL: URL(string: "https://modelscope.cn/models/\(path)/\(name)"))
+    }
+
+    /// 把 README（HTML/Markdown 混杂）剥离标签，截取前若干字作为摘要。
+    static func summarize(_ html: String) -> String {
+        // 去 HTML 标签
+        var t = html
+        t = t.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+        // 去 Markdown 符号与多余空白
+        t = t.replacingOccurrences(of: "```", with: " ")
+        t = t.replacingOccurrences(of: "\\n", with: " ")
+        t = t.replacingOccurrences(of: "\n", with: " ")
+        t = t.replacingOccurrences(of: "#", with: " ")
+        t = t.replacingOccurrences(of: "*", with: " ")
+        t = t.replacingOccurrences(of: "|", with: " ")
+        // 折叠连续空白
+        while t.contains("  ") { t = t.replacingOccurrences(of: "  ", with: " ") }
+        let trimmed = t.trimmingCharacters(in: .whitespacesAndNewlines)
+        let limit = 600
+        if trimmed.count <= limit { return trimmed }
+        return String(trimmed.prefix(limit)) + "…"
     }
 }
 
