@@ -287,8 +287,10 @@ final class AppState: ObservableObject {
 
     let ctxOptions = [4096, 8192, 16384, 32768, 65536, 131072]
 
-    /// 离屏截图模式。TextField 与拖放区在 ImageRenderer 里会被画成黄色占位块，
-    /// 截图时换成等高的静态占位，保证文档里的图是页面真实长什么样。
+    /// 离屏截图模式。AppKit 支撑的控件（TextField / segmented Picker / Stepper / 拖放区）
+    /// 在 ImageRenderer 里会被画成黄色 ⊗ 占位块，截图时统一换成等高的静态替代
+    /// （见 WideSearchField / StaticSegmented / StaticStepper / SearchBox），
+    /// 保证视觉回归图反映的是页面真实排版，而不是渲染器的占位块。
     let snapshot: Bool
 
     init() {
@@ -613,7 +615,8 @@ final class AppState: ObservableObject {
         role = r
         // 角色切换：保留仍属于新角色的已选任务；一个都不剩就取该角色第一个
         let keep = tasks.intersection(Set(r.tasks))
-        tasks = keep.isEmpty ? [r.tasks[0]] : keep
+        // prefix(1) 而不是 r.tasks[0]：以后若新增一个暂时没配任务的角色，也不会崩
+        tasks = keep.isEmpty ? Set(r.tasks.prefix(1)) : keep
     }
 
     // MARK: - 加载
@@ -779,9 +782,9 @@ final class AppState: ObservableObject {
 
             // 百分比
             var pct = 0.0
-            if let r = rest.range(of: #"\d{1,3}%"#, options: .regularExpression) {
-                let s = String(rest[r])
-                pct = Double(s.dropLast())! / 100.0
+            if let r = rest.range(of: #"\d{1,3}%"#, options: .regularExpression),
+               let v = Double(String(rest[r]).dropLast()) {
+                pct = v / 100.0
             }
             // 大小：done/total
             var done = "", total = ""
@@ -830,7 +833,7 @@ final class AppState: ObservableObject {
                 if let r = hfR { self.hfResults = r }
                 if let r = msR { self.msResults = r }
                 if hfR == nil && msR == nil {
-                    self.hfError = "双源都失败。HuggingFace 走 hf-mirror 镜像，魔搭直连，请检查网络。"
+                    self.hfError = "双源都失败。HuggingFace 源默认走 hf-mirror 镜像（可用 HF_ENDPOINT 改），魔搭直连，请检查网络。"
                 } else if hfR == nil || msR == nil {
                     self.hfError = "部分源失败：\(hfR == nil ? "HuggingFace" : "魔搭") 未返回结果。"
                 } else {
@@ -840,9 +843,9 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// 打开某个 HF 模型的详情页（浏览器）
+    /// 打开某个 HF 模型的详情页（浏览器）。与搜索/下载共用站点根，并且要转义仓库名。
     func openHFModel(_ modelId: String) {
-        if let u = URL(string: "https://hf-mirror.com/\(modelId)") {
+        if let u = URL(string: "\(HFSearch.root)/\(urlPathEscape(modelId))") {
             NSWorkspace.shared.open(u)
         }
     }
@@ -860,7 +863,11 @@ final class AppState: ObservableObject {
                 proc.executableURL = URL(fileURLWithPath: cli)
                 proc.arguments = ["download", modelId, "--include", "*.gguf"]
                 var env = ProcessInfo.processInfo.environment
-                env["HF_ENDPOINT"] = "https://hf-mirror.com"
+                // 用户若自己指定了 HF_ENDPOINT（官方站/自建镜像），不要覆盖掉；
+                // 否则给 CLI 一个与应用内搜索一致的默认站点。
+                if env["HF_ENDPOINT"]?.isEmpty ?? true {
+                    env["HF_ENDPOINT"] = HFSearch.root
+                }
                 proc.environment = env
                 let pipe = Pipe()
                 proc.standardOutput = pipe
@@ -2519,15 +2526,14 @@ final class AppState: ObservableObject {
             return
         }
         var s = "# MindModel 实测记录\n\n"
-        s += "生成时间：\(Date())\n\n"
+        s += "生成时间：\(Report.stamp)\n\n"
         s += "| 模型 | 实测 tok/s | 预填充 tok/s | tokens | 时间 |\n|---|---|---|---|---|\n"
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd HH:mm"
         for r in benchRecords.values.sorted(by: { $0.tps > $1.tps }) {
             s += String(format: "| %@ | %.1f | %.0f | %d | %@ |\n",
-                        r.model, r.tps, r.prefill, r.tokens, f.string(from: r.at))
+                        r.model, r.tps, r.prefill, r.tokens, Report.recordStamp(r.at))
         }
         s += "\n> 实测值以本机 Ollama 运行为准，同一模型两次差 5% 以上会标注。\n"
+        s += Report.footer
         let path = NSHomeDirectory() + "/Desktop/MindModel实测记录-\(Int(Date().timeIntervalSince1970)).md"
         do {
             try s.write(toFile: path, atomically: true, encoding: .utf8)
@@ -2540,7 +2546,7 @@ final class AppState: ObservableObject {
 
     func exportReport() {
         var s = "# MindModel 本机体检报告\n\n"
-        s += "生成时间：\(Date())\n\n"
+        s += "生成时间：\(Report.stamp)\n\n"
         s += "## 硬件\n\n"
         s += "| 项 | 值 |\n|---|---|\n"
         s += "| 芯片 | \(hw.chip) |\n"
@@ -2553,11 +2559,14 @@ final class AppState: ObservableObject {
         s += "| 实测内存带宽 | \(bandwidth.map { String(format: "%.0f GB/s", $0) } ?? "未测") |\n"
         s += "| 磁盘可用 | \(String(format: "%.0f", hw.diskFreeGB)) GB |\n\n"
         s += "## 推荐（上下文 \(contextTokens) tokens）\n\n"
-        s += "| 模型 | 参数 | Q4 体积 | 需求 | 判定 | 估算 tok/s |\n|---|---|---|---|---|---|\n"
+        // estTokS 可能来自本机实测（Advisor 命中 benchmarks 时直接返回真实值），
+        // 表头不能一律写「估算」，逐行标来源。
+        s += "| 模型 | 参数 | Q4 体积 | 需求 | 判定 | tok/s | 速度来源 |\n|---|---|---|---|---|---|---|\n"
         for a in ranked.prefix(20) where a.level != .tooHeavy {
-            s += String(format: "| %@ | %.1fB | %.1f GB | %.1f GB | %@ | %.0f |\n",
+            let src = benchmarks[a.model.name] != nil ? "实测" : "估算"
+            s += String(format: "| %@ | %.1fB | %.1f GB | %.1f GB | %@ | %.0f | %@ |\n",
                         a.model.name, a.model.paramsB, a.model.q4GB, a.needGB,
-                        a.level.label, a.estTokS)
+                        a.level.label, a.estTokS, src)
         }
         s += "\n## 已装模型\n\n"
         for m in installed {
@@ -2565,11 +2574,9 @@ final class AppState: ObservableObject {
         }
         if !benchRecords.isEmpty {
             s += "\n## 实测记录\n\n| 模型 | 实测 tok/s | 预填充 tok/s | tokens | 时间 |\n|---|---|---|---|---|\n"
-            let f = DateFormatter()
-            f.dateFormat = "yyyy-MM-dd HH:mm"
             for r in benchRecords.values.sorted(by: { $0.tps > $1.tps }) {
                 s += String(format: "| %@ | %.1f | %.0f | %d | %@ |\n",
-                            r.model, r.tps, r.prefill, r.tokens, f.string(from: r.at))
+                            r.model, r.tps, r.prefill, r.tokens, Report.recordStamp(r.at))
             }
         }
         if !lctxRecords.isEmpty {
@@ -2579,7 +2586,8 @@ final class AppState: ObservableObject {
             }
             s += "\n> 测试法：把答案藏在长文本末尾（大海捞针），答对说明该档上下文下注意力还稳定。\n"
         }
-        s += "\n> 体积与适配参考 localmodel.run（2026-11）；速度为估算，实测值以本机运行为准。\n"
+        s += "\n> 体积与适配参考 localmodel.run（2026-11）；标「估算」的速度按本机实测带宽推算，误差约 ±30%，以本机实测为准。\n"
+        s += Report.footer
         let path = NSHomeDirectory() + "/Desktop/MindModel体检报告-\(Int(Date().timeIntervalSince1970)).md"
         do {
             try s.write(toFile: path, atomically: true, encoding: .utf8)

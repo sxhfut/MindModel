@@ -76,14 +76,21 @@ struct HFModel: Identifiable, Codable {
             .map { String($0.dropFirst("license:".count)) } ?? "未知"
     }
 
+    /// HF 搜索 API **不返回仓库体积**（实测 hf-mirror 的字段只有
+    /// id/modelId/downloads/likes/tags/createdAt/private/pipeline_tag/library_name/_id）。
+    /// 保持这个接口与魔搭一致，UI 就能用同一套代码；真实体积要列出文件后才知道。
+    var repoSizeGB: Double? { nil }
+
     /// 是否明确标注了 GGUF（有些仓库是 safetensors + gguf 混合）
     var isGGUF: Bool { tags.contains("gguf") }
 
-    /// 详情页 URL（走镜像可达的网页端）
-    var pageURL: URL? { URL(string: "https://hf-mirror.com/\(modelId)") }
+    /// 详情页 URL。与搜索/列文件/下载共用同一个站点根，HF_ENDPOINT 改了不会一半走官方一半走镜像。
+    var pageURL: URL? { URL(string: "\(HFSearch.root)/\(urlPathEscape(modelId))") }
 
     /// 仓库树 API（列出文件，找 .gguf 下载链接）
-    var treeURL: URL? { URL(string: "https://hf-mirror.com/api/models/\(modelId)/tree/main") }
+    var treeURL: URL? {
+        URL(string: "\(HFSearch.base)/\(urlPathEscape(modelId))/tree/main")
+    }
 
     enum CodingKeys: String, CodingKey {
         case modelId, downloads, likes, tags, createdAt
@@ -114,12 +121,22 @@ func urlPathEscape(_ s: String) -> String {
 /// 域名默认走 hf-mirror.com（国内可达），原始 huggingface.co 在本机被墙。
 /// 用环境变量 HF_ENDPOINT 可覆盖（例如设回 https://huggingface.co）。
 enum HFSearch {
-    static let base: String = {
-        if let ep = ProcessInfo.processInfo.environment["HF_ENDPOINT"], !ep.isEmpty {
-            return ep.hasSuffix("/") ? ep + "api/models" : ep + "/api/models"
+    /// 站点根（不含 /api/models）。HF_ENDPOINT 既可以是根地址，也可以直接给到
+    /// /api/models；两种都归一化，避免拼出 `.../api/models/api/models` 这种坏地址。
+    /// 搜索、仓库树、详情页、下载直链必须共用它，否则设了 HF_ENDPOINT 会出现
+    /// 「搜索走官方站、下载却还打镜像」的分裂行为。
+    static let root: String = {
+        guard let ep = ProcessInfo.processInfo.environment["HF_ENDPOINT"], !ep.isEmpty else {
+            return "https://hf-mirror.com"
         }
-        return "https://hf-mirror.com/api/models"
+        var s = ep
+        while s.hasSuffix("/") { s.removeLast() }
+        let suffix = "/api/models"
+        if s.hasSuffix(suffix) { s = String(s.dropLast(suffix.count)) }
+        return s
     }()
+
+    static let base: String = { root + "/api/models" }()
 
     /// 搜索模型。q 为空时返回热门模型。format 为 .ggufOnly 时只搜 GGUF，.all 时搜全部格式。
     static func search(_ q: String, format: ModelFormat = .ggufOnly, limit: Int = 50) async throws -> [HFModel] {
@@ -154,7 +171,7 @@ enum HFSearch {
     /// 列出某个仓库里的文件（含大小）。format 为 .ggufOnly 时只列 .gguf/.mmproj，
     /// .all 时列出全部文件（如 safetensors 原始权重）。
     static func files(_ modelId: String, format: ModelFormat = .ggufOnly) async throws -> [HFFile] {
-        guard let url = URL(string: "https://hf-mirror.com/api/models/\(urlPathEscape(modelId))/tree/main") else {
+        guard let url = URL(string: "\(base)/\(urlPathEscape(modelId))/tree/main") else {
             throw NSError(domain: "HF", code: -1,
                           userInfo: [NSLocalizedDescriptionKey: "仓库名含无法用于地址的字符：\(modelId)"])
         }
@@ -212,11 +229,11 @@ struct HFFile: Codable, Identifiable {
         return String(format: "%.0f MB", Double(size) / 1_048_576.0)
     }
 
-    /// 直链（走 hf-mirror resolve，国内可达）：
-    /// https://hf-mirror.com/{modelId}/resolve/main/{path}
+    /// 直链（默认走 hf-mirror resolve，国内可达）：
+    /// https://<root>/{modelId}/resolve/main/{path}
     func downloadURL(modelId: String) -> URL? {
         let p = urlPathEscape(path)
-        return URL(string: "https://hf-mirror.com/\(urlPathEscape(modelId))/resolve/main/\(p)")
+        return URL(string: "\(HFSearch.root)/\(urlPathEscape(modelId))/resolve/main/\(p)")
     }
 
     /// 是否 gguf 文件（含 mmproj 投影器）
@@ -261,7 +278,9 @@ struct MSModel: Identifiable, Codable {
     let tasks: [String]       // 任务名，如 "image-text-to-text"（视觉多模态）
     let modelType: [String]   // 模型类型，如 "qwen3_vl"
 
-    var pageURL: URL? { URL(string: "https://modelscope.cn/models/\(path)/\(name)") }
+    var pageURL: URL? {
+        URL(string: "https://modelscope.cn/models/\(urlPathEscape(path))/\(urlPathEscape(name))")
+    }
     var isGGUF: Bool { name.lowercased().contains("gguf") }
 
     /// 是否视觉多模态模型（从 Tasks 的 image-text-to-text / domain 判断）
@@ -271,6 +290,9 @@ struct MSModel: Identifiable, Codable {
         || modelType.contains { $0.lowercased().contains("vl") }
         || name.lowercased().contains("-vl") || name.lowercased().contains("vl-")
     }
+
+    /// 仓库总体积（GB）；为 0 表示 API 没给
+    var repoSizeGB: Double? { storageSize > 0 ? Double(storageSize) / 1_073_741_824.0 : nil }
 
     /// 体积的可读显示
     var sizeText: String {
@@ -384,8 +406,8 @@ struct ModelDetail {
 /// 魔搭详情 API 客户端。点「详情」时按需抓取，不阻塞搜索列表。
 enum MSDetail {
     static func fetch(path: String, name: String) async -> ModelDetail? {
-        let p = path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? path
-        let n = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? name
+        let p = urlPathEscape(path)
+        let n = urlPathEscape(name)
         guard let url = URL(string: "https://modelscope.cn/api/v1/models/\(p)/\(n)") else { return nil }
         do {
             let (data, resp) = try await URLSession.shared.data(from: url)
@@ -434,7 +456,7 @@ extension DetailResponse.DetailData {
             license: License ?? "未知",
             downloads: Downloads ?? 0,
             stars: Stars ?? 0,
-            pageURL: URL(string: "https://modelscope.cn/models/\(path)/\(name)"))
+            pageURL: URL(string: "https://modelscope.cn/models/\(urlPathEscape(path))/\(urlPathEscape(name))"))
     }
 
     /// 把 README（HTML/Markdown 混杂）剥离标签，截取前若干字作为摘要。

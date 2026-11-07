@@ -132,6 +132,86 @@ struct SearchBox: View {
     }
 }
 
+/// 宽版搜索框：离屏渲染画不了 AppKit 输入控件，会整块涂成黄色 ⊗ 占位块，
+/// 截图模式换成长得一样的静态框，正常路径仍是原生 TextField（可输入、可回车提交）。
+struct WideSearchField: View {
+    let placeholder: String
+    @Binding var text: String
+    var onSubmit: () -> Void = {}
+    @EnvironmentObject var s: AppState
+
+    var body: some View {
+        Group {
+            if s.snapshot {
+                HStack(spacing: 5) {
+                    Image(systemName: "magnifyingglass").font(.system(size: 11))
+                    Text(text.isEmpty ? placeholder : text)
+                        .font(.system(size: 12)).lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 6)
+                .frame(height: 21)
+                .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.primary.opacity(0.06)))
+                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(T.line, lineWidth: 0.7))
+            } else {
+                TextField(placeholder, text: $text)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(onSubmit)
+            }
+        }
+    }
+}
+
+/// 截图模式下的静态分段控件（替代 .segmented Picker）。
+/// 保持与原生分段控件相近的高度与宽度，视觉回归图才不会失真。
+struct StaticSegmented: View {
+    let labels: [String]
+    let selected: String
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(labels, id: \.self) { l in
+                Text(l)
+                    .font(.system(size: 11))
+                    .foregroundStyle(l == selected ? .primary : .secondary)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 3)
+                    .background(RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(l == selected ? Color.primary.opacity(0.13) : Color.clear))
+            }
+        }
+        .padding(2)
+        .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .fill(Color.primary.opacity(0.06)))
+    }
+}
+
+/// 截图模式下的静态步进器（替代 Stepper）。
+struct StaticStepper: View {
+    let value: Int
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("\(value)")
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(T.accent)
+            HStack(spacing: 6) {
+                Image(systemName: "minus").font(.system(size: 9))
+                Divider().frame(height: 11)
+                Image(systemName: "plus").font(.system(size: 9))
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 6).padding(.vertical, 3)
+            .background(RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(Color.primary.opacity(0.07)))
+        }
+    }
+}
+
 struct SectionHead: View {
     let title: String
     var sub: String = ""
@@ -921,7 +1001,7 @@ struct TaskView: View {
                         Text("已选 \(s.pickedTasks.count) 个")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                         if s.pickedTasks.count > 1 {
-                            Button("重置") { s.tasks = [s.role.tasks[0]] }
+                            Button("重置") { s.tasks = Set(s.role.tasks.prefix(1)) }
                                 .buttonStyle(.bordered).controlSize(.small)
                                 .help("回到该角色的第一个任务")
                         }
@@ -1373,9 +1453,8 @@ struct OnlineModelsView: View {
                     SectionHead(title: "搜索在线模型",
                                 sub: "清单外的模型也能找。魔搭（国内直连）+ HuggingFace 双源，按下载量排序。")
                     HStack(spacing: 8) {
-                        TextField("搜模型名，如 qwen / llama / mistral…", text: $s.hfQuery)
-                            .textFieldStyle(.roundedBorder)
-                            .onSubmit { s.searchHF() }
+                        WideSearchField(placeholder: "搜模型名，如 qwen / llama / mistral…",
+                                        text: $s.hfQuery) { s.searchHF() }
                         Button("搜索") { s.searchHF() }
                             .buttonStyle(.borderedProminent).controlSize(.small)
                             .disabled(s.hfSearching)
@@ -1386,15 +1465,21 @@ struct OnlineModelsView: View {
                     // 格式 + 参数量筛选 + 排序
                     HStack(spacing: 10) {
                         // 格式过滤：仅 GGUF / 全部格式
-                        Picker("", selection: $s.modelFormat) {
-                            ForEach(ModelFormat.allCases) { f in
-                                Text(f.label).tag(f)
+                        if s.snapshot {
+                            StaticSegmented(labels: ModelFormat.allCases.map(\.label),
+                                            selected: s.modelFormat.label)
+                                .frame(maxWidth: 200)
+                        } else {
+                            Picker("", selection: $s.modelFormat) {
+                                ForEach(ModelFormat.allCases) { f in
+                                    Text(f.label).tag(f)
+                                }
                             }
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(maxWidth: 200)
-                        .onChange(of: s.modelFormat) {
-                            s.searchHF()
+                            .pickerStyle(.segmented)
+                            .frame(maxWidth: 200)
+                            .onChange(of: s.modelFormat) {
+                                s.searchHF()
+                            }
                         }
                         Spacer()
                         // 参数量筛选
@@ -1430,9 +1515,15 @@ struct OnlineModelsView: View {
                         // 多线程并发段数设置
                         HStack(spacing: 6) {
                             Text("并发分段").font(.system(size: 12)).foregroundStyle(.secondary)
-                            Stepper(value: $s.downloadSegments, in: 1...32) {
-                                Text("\(s.downloadSegments)").font(.system(size: 12, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(T.accent)
+                            Group {
+                                if s.snapshot {
+                                    StaticStepper(value: s.downloadSegments)
+                                } else {
+                                    Stepper(value: $s.downloadSegments, in: 1...32) {
+                                        Text("\(s.downloadSegments)").font(.system(size: 12, weight: .semibold, design: .rounded))
+                                            .foregroundStyle(T.accent)
+                                    }
+                                }
                             }
                             .frame(maxWidth: 150)
                         }
@@ -1786,7 +1877,7 @@ struct HFRow: View {
                         FitLine(fit: fit, budgetGB: s.budgetGB)
                         if fit.shouldWarn { FitWarnBar(fit: fit) }
                     } else {
-                        FitUnknownLine()
+                        FitUnknownLine(repoSizeGB: model.repoSizeGB)
                     }
                     // 一句话简介（本地从 modelId/tags 推断）
                     if !oneLineIntro.isEmpty {
@@ -1836,7 +1927,7 @@ struct MSRow: View {
                     FitLine(fit: fit, budgetGB: s.budgetGB)
                     if fit.shouldWarn { FitWarnBar(fit: fit) }
                 } else {
-                    FitUnknownLine()
+                    FitUnknownLine(repoSizeGB: model.repoSizeGB)
                 }
                 // 一句话简介（本地推断）
                 if !model.oneLineIntro.isEmpty {
@@ -1910,8 +2001,8 @@ struct ModelDetailSheet: View {
             } else {
                 detailBlock("本机能不能跑 · 跑起来什么样") {
                     VStack(alignment: .leading, spacing: 6) {
-                        FitUnknownLine()
-                        Text("名字和列表里都没有参数量，也没给文件体积，硬算就是编数字。点「下载」列出文件后，有了真实体积就能判断内存装不装得下。")
+                        FitUnknownLine(repoSizeGB: model.repoSizeGB)
+                        Text("名字里没有参数量；仓库给的总字节数是所有量化版本之和，不能当成单个模型的体积。点「下载」列出文件后，有了真实体积就能判断内存装不装得下。")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary.opacity(0.85))
                             .fixedSize(horizontal: false, vertical: true)

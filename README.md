@@ -98,6 +98,12 @@ MindModel 专注**本地模型**，模型来源分三层，相互补充：
 
 内置目录的价值在"适配判定"（这台机器能不能跑、跑多快），这些数据需要手工标注，无法自动生成；所以它不自动刷新。清单之外的模型由"在线搜索 + 无白名单导入"覆盖——你在 HuggingFace、魔搭、网盘、任何地方找到的 GGUF，都能导进来用，不受内置 79 条限制。
 
+### 在线模型的源与自定义端点
+
+- HuggingFace 源默认走 `https://hf-mirror.com` 镜像（国内可达），魔搭走 `modelscope.cn` 直连；两源独立容错，一个失败不影响另一个。
+- 设 `HF_ENDPOINT` 可换源，例如 `HF_ENDPOINT=https://huggingface.co ./build/MindModel.app/Contents/MacOS/MindModel`，或指向自建镜像。写站点根（`https://host`）或直接写到 `/api/models` 都行，应用会归一化。
+- **搜索、仓库文件列表、详情页、下载直链、以及调用 `huggingface-cli` 时的环境变量，全部共用这一个站点根**；不会出现"搜索走官方站、下载还打镜像"的分裂。用户已设置的 `HF_ENDPOINT` 不会被 CLI 下载路径覆盖。
+
 ## 架构
 
 一套算法，三种壳。内核是 Rust 纯逻辑，外层 Tauri 桌面 / 浏览器兜底 / CLI 三种入口共用同一份前端：
@@ -187,12 +193,15 @@ MindModel/
 │   ├── Advisor.swift    预算/需求/速度/能力分/任务合成
 │   ├── Agent.swift      智能体工具层：读文件/列目录/搜索/写文件/跑命令
 │   ├── HFSearch.swift   在线模型搜索：HuggingFace + 魔搭 GGUF（零依赖 URLSession）
+│   ├── MSDownload.swift 分段并发下载：断点续传、校验、批量队列
 │   ├── ModelNameDecoder.swift  模型名里的术语解析：参数量/量化/精度/能力后缀
 │   ├── ModelNameViews.swift    术语 chip、词典弹层、本机适配徽章与内存条
 │   ├── OnlineFit.swift  在线模型的本机适配评估：体积/内存/速度/上下文
+│   ├── LabInfo.swift    出品/署名/联系方式的单一数据源（照录官网）
+│   ├── Report.swift     导出报告的时间戳与落款（纯格式化）
 │   ├── AboutView.swift  关于 / 出品：单位、负责人、联系方式、未验证清单
 │   ├── App.swift        状态、并发、Ollama 交互、agent 循环
-│   └── Views.swift      八个页面
+│   └── Views.swift      十一个页面 + 各页弹层与详情
 ├── rust/
 │   └── crates/{core,probe,backend,cli,server}
 ├── shells/

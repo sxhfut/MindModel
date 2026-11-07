@@ -248,8 +248,17 @@ struct FitLine: View {
 /// 无法给出任何评估时的说明行。
 /// 空着不写会被当成程序算错了，所以这里必须明说「缺什么依据」，并强调不等于跑不动。
 struct FitUnknownLine: View {
-    /// 缺依据的具体原因（默认：名字里没有参数量）
-    var reason: String = "模型名里没有参数量，仓库列表也没给文件体积"
+    /// 缺依据的具体原因；给了 repoSizeGB 时会自动改成更准确的说法
+    var reason: String? = nil
+    /// 仓库总字节数折算的 GB。这是**全部文件之和**，不是单个模型的体积，只用来解释
+    var repoSizeGB: Double? = nil
+
+    private var shownReason: String {
+        if let g = repoSizeGB, g > 0.05 {
+            return String(format: "名字里没有参数量；仓库 %.1f GB 是多版本合计，不能据此判定", g)
+        }
+        return reason ?? "名字里没有参数量，也没拿到文件体积"
+    }
 
     var body: some View {
         HStack(spacing: 5) {
@@ -260,17 +269,19 @@ struct FitUnknownLine: View {
                 .background(Color.secondary.opacity(0.12))
                 .foregroundStyle(.secondary)
                 .clipShape(Capsule())
-            Text("· \(reason)")
+            Text("· \(shownReason)")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
             Text("· 不代表跑不动")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary.opacity(0.75))
         }
         .help("""
         在线搜索只给模型名。名字里带 7B / 30B-A3B 这类参数量，才能推出体积、内存占用和速度；\
-        这条既没有参数量、也没有文件体积，硬算就是编数字，所以这里不下结论。
+        这条没有参数量，硬算就是编数字，所以这里不下结论。\
+        仓库给的总字节数是目录下所有量化版本与辅助文件之和，拿来当单个模型的体积会严重高估。\
         想准确判断：点「下载」列出文件，有了真实体积就能判内存；下载完成后再看实测速度。
         """)
     }

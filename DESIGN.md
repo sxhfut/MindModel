@@ -129,8 +129,14 @@ KV        = 2 × 层数 × KV头数 × head_dim × 2B × 上下文
 - 逻辑层与 UI 分离，`Advisor`/`TaskBlend` 是纯函数，可编译成命令行校验器直接打印结果；
   Rust 侧有 5 条断言钉住与 Swift 的首选一致（`task_picks_match_swift_side`）。
 - `MM_TAB=<tab>` 让应用直落到指定页签；`MM_SNAPSHOT=<path>` 用 `ImageRenderer` 离屏渲染整页为 PNG 后退出。
-  不依赖窗口焦点与录屏权限，CI 里可用于视觉回归。
+  不依赖窗口焦点与录屏权限，CI 里可用于视觉回归；`MM_SNAP_W` 控制渲染宽度。
   （注意：`ScrollView` 在 `ImageRenderer` 里不出内容，故页面内容抽为 `PageStack` 以便绕开。）
+- AppKit 支撑的控件（`TextField` / `.segmented` `Picker` / `Stepper` / 拖放区）在离屏渲染里会被画成
+  黄色 ⊗ 占位块，会盖住真实排版。截图模式下 `AppState.snapshot` 会把它们换成等高的静态替代
+  （`WideSearchField` / `StaticSegmented` / `StaticStepper` / `SearchBox`），正常路径仍用原生控件。
+  视觉回归的判据之一：整张 PNG 不应出现 `#FFC800` 附近的纯黄像素块。
+- 页签键：`overview / hardware / recommend / task / installed / online / import / bench / chat / agent / about`，
+  共 11 个；逐一渲染可当作全页冒烟测试。
 
 ## 六、许可证与治理
 

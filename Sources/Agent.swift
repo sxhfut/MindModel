@@ -86,8 +86,11 @@ enum AgentTools {
         var props: [String: Any] = [:]
         var required: [String] = []
         for p in params {
-            let key = p["name"] as! String
-            var ps: [String: Any] = ["type": p["type"] as! String]
+            // 工具定义是硬编码字面量，但别用 as!：以后加参数漏写 name/type
+            // 会在首次访问 Tool.defs 时直接崩应用。缺字段就跳过该参数定义。
+            guard let key = p["name"] as? String,
+                  let type = p["type"] as? String else { continue }
+            var ps: [String: Any] = ["type": type]
             if let d = p["description"] as? String { ps["description"] = d }
             props[key] = ps
             if (p["required"] as? Bool) == true { required.append(key) }

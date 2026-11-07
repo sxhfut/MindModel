@@ -1,48 +1,6 @@
 import SwiftUI
 import AppKit
 
-// MARK: - 出品信息（单一数据源）
-
-/// 署名与联系方式**照录实验室官网公开内容**，不要凭印象填。
-/// 来源：
-///   https://sxhfut.github.io/          实验室全称、英文名、带领者
-///   https://sxhfut.github.io/contact/ 邮箱、通讯地址、教师主页、GitHub
-/// 官网没有电话、邮编、微信公众号，所以这里也不列（不编）。
-///
-/// 注意：「出品」与「版权」是两个不同来源的原文，不要互相覆盖：
-///   - 实验室主站写「合肥工业大学多模态情感计算与人因工程实验室，由孙晓教授带领」
-///   - 本项目的 README / 项目主页页脚一直写「多模态情感计算与人因工程团队」
-/// 这里按各自原文分列，避免把一种写法硬改成另一种。
-enum LabInfo {
-    static let university = "合肥工业大学"
-    static let universityEN = "Hefei University of Technology (HFUT)"
-    static let lab = "多模态情感计算与人因工程实验室"
-    static let labEN = "Multimodal Affective Computing and Human Factors Engineering Laboratory"
-    /// 官网原文是「由孙晓教授带领」，不是「负责人：」字段，措辞上不冒充官方字段
-    static let lead = "孙晓 教授（官网：由孙晓教授带领）"
-    static let email = "sunx@hfut.edu.cn"
-    static let address = "安徽省合肥市屯溪路 193 号，合肥工业大学计算机与信息学院"
-    static let addressEN = "School of Computer Science and Information Engineering, HFUT, 193 Tunxi Road, Hefei, Anhui, China"
-
-    static let labSite = "https://sxhfut.github.io/"
-    static let contactPage = "https://sxhfut.github.io/contact/"
-    static let facultyPage = "https://faculty.hfut.edu.cn/sunxiao/zh_CN/index.htm"
-    static let labGitHub = "https://github.com/sxhfut"
-    static let repo = "https://github.com/sxhfut/MindModel"
-    static let projectPage = "https://sxhfut.github.io/MindModel/"
-
-    /// 项目主页 / README / Info.plist 里沿用的版权主体
-    static let copyright = "Copyright 2026 多模态情感计算与人因工程团队"
-    static let license = "Apache-2.0"
-
-    static var version: String {
-        let d = Bundle.main.infoDictionary
-        let short = d?["CFBundleShortVersionString"] as? String ?? "0.1.0"
-        let build = d?["CFBundleVersion"] as? String ?? "1"
-        return "\(short) (\(build))"
-    }
-}
-
 // MARK: - 关于 / 出品 页
 
 struct AboutView: View {
@@ -106,6 +64,7 @@ struct AboutView: View {
                     SectionHead(title: "当前状态：还不是「完美」", sub: "已走通的与没验证的，分开写清楚")
                     StatusRow(ok: true, text: "macOS 桌面版已在 Apple M5 Max / 128 GB / macOS 27.0.1 实跑：带宽实测、GGUF 导入、Ollama 注册、真实生成测速、智能体工具调用。")
                     StatusRow(ok: true, text: "在线模型、下载、断点续传、批量队列、实测基线等功能已实现并编译通过；改动均离线复核过数值与排版。")
+                    StatusRow(ok: true, text: "11 个页签逐一离屏渲染冒烟通过：无崩溃、无文字截断、无渲染占位块；URL/署名/时间戳有独立命令行断言复核。")
                     StatusRow(ok: false, text: "Windows / Linux 安装包由 CI 产出，从未在真实硬件上打开运行；探测层（DXGI/NVML、sysfs）待真机验证。")
                     StatusRow(ok: false, text: "本机没有 cargo，Rust 核心与 CLI 的一致性测试无法在这里运行；改速度公式会动到它，所以这次没改。")
                     StatusRow(ok: false, text: "概览页用保守系数 0.45，在线模型页用实测校准过的模型；同一模型两页 tok/s 可能差 1.5–2.5 倍，已在概览页标注。")
