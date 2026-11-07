@@ -36,6 +36,29 @@ struct ImportItem: Identifiable {
     var status: ImportStatus = .idle
 }
 
+/// 批量下载队列里的一个待下载文件。
+struct QueueItem: Identifiable, Equatable {
+    enum Status: Equatable {
+        case queued      // 排队等待
+        case downloading // 正在下载
+        case done        // 已完成
+        case failed(String) // 失败（含原因）
+    }
+    let id: String          // 用 fileName 或 url 唯一标识
+    let fileName: String
+    let totalSize: Int64
+    let source: String      // ms / hf
+    let remoteURL: String
+    let sha256: String?
+    var status: Status = .queued
+
+    var sizeText: String {
+        let gb = Double(totalSize) / 1_073_741_824.0
+        if gb >= 1 { return String(format: "%.1f GB", gb) }
+        return String(format: "%.0f MB", Double(totalSize) / 1_048_576.0)
+    }
+}
+
 /// 下载速度/剩余时间估算器。喂入 (已下载字节, 总字节) 样本，用滑动窗口算实时速度与 ETA。
 /// 纯值类型，AppState 持有并在每次进度回调里 update，避免频繁刷新整份 UI。
 struct SpeedTracker {
@@ -185,6 +208,10 @@ final class AppState: ObservableObject {
     private var hfDownloadTask: Task<Void, Never>?
     /// 磁盘上「未完成/可续传」的下载记录（启动时加载，用于断点续传提示）
     @Published var resumeRecords: [DownloadRecord] = []
+    /// 文件列表多选（勾选加入批量队列）——魔搭
+    @Published var msSelected: Set<String> = []
+    /// 文件列表多选——HF
+    @Published var hfSelected: Set<String> = []
     /// 已完成下载的历史清单
     @Published var downloadHistory: [HistoryRecord] = []
     /// 并发分段数（持久化到 UserDefaults，可在设置里调）
@@ -195,6 +222,15 @@ final class AppState: ObservableObject {
     @Published var downloadSpeed: (bytesPerSec: Double, etaSeconds: Double)?
     /// 速度估算器（非 @Published，纯内部计算）
     private var speedTracker = SpeedTracker()
+
+    // 批量下载队列
+    /// 队列项（用户勾选加入的待下载文件）
+    @Published var queueItems: [QueueItem] = []
+    /// 队列是否正在处理中
+    @Published var queueRunning = false
+    /// 队列当前项的进度（fileName -> 已下/总）
+    @Published var queueProgress: (fileName: String, received: Int64, total: Int64)?
+    private var queueTask: Task<Void, Never>?
 
     // 模型仓库
     @Published var disk = DiskScan()
@@ -979,6 +1015,163 @@ final class AppState: ObservableObject {
             resumeDownload(rec)
         }
         toast = "已恢复 \(records.count) 个下载"
+    }
+
+    // MARK: - 批量下载队列
+
+    /// 把若干文件加入下载队列（去重：已存在同 fileName 的不重复加）。
+    func enqueueDownloads(_ items: [QueueItem]) {
+        for it in items {
+            if !queueItems.contains(where: { $0.fileName == it.fileName }) {
+                queueItems.append(it)
+            }
+        }
+        toast = "已加入 \(items.count) 个文件到队列（共 \(queueItems.count) 个）"
+        if !queueRunning {
+            startQueue()
+        }
+    }
+
+    /// 把魔搭文件列表里勾选的文件加入队列。
+    func enqueueMSSelected() {
+        guard let listing = msListing else { return }
+        let selected = msFiles.filter { msSelected.contains($0.path) && !$0.isAux }
+        guard !selected.isEmpty else { toast = "请先勾选要下载的文件"; return }
+        let items = selected.compactMap { f -> QueueItem? in
+            guard let u = MSDownload.directURL(org: listing.org, name: listing.name, filePath: f.path) else { return nil }
+            return QueueItem(id: f.path, fileName: (f.path as NSString).lastPathComponent,
+                             totalSize: f.size, source: "ms", remoteURL: u.absoluteString, sha256: f.sha256)
+        }
+        enqueueDownloads(items)
+        msSelected.removeAll()
+    }
+
+    /// 把 HF 文件列表里勾选的文件加入队列。
+    func enqueueHFSelected() {
+        guard let listing = hfListing else { return }
+        let selected = hfFiles.filter { hfSelected.contains($0.path) && !$0.isAux }
+        guard !selected.isEmpty else { toast = "请先勾选要下载的文件"; return }
+        let items = selected.compactMap { f -> QueueItem? in
+            guard let u = f.downloadURL(modelId: listing.modelId) else { return nil }
+            return QueueItem(id: f.path, fileName: (f.path as NSString).lastPathComponent,
+                             totalSize: Int64(f.size), source: "hf", remoteURL: u.absoluteString, sha256: f.sha256)
+        }
+        enqueueDownloads(items)
+        hfSelected.removeAll()
+    }
+
+    /// 启动队列处理：顺序下载，一个完成自动下一个。
+    func startQueue() {
+        guard !queueRunning else { return }
+        queueRunning = true
+        queueTask = Task {
+            while !queueItems.isEmpty {
+                if Task.isCancelled { break }
+                // 取第一个排队/失败可重试的项
+                guard let idx = queueItems.firstIndex(where: { $0.status != .done }) else { break }
+                let item = queueItems[idx]
+                await MainActor.run {
+                    self.queueItems[idx].status = .downloading
+                    self.queueProgress = (fileName: item.fileName, received: 0, total: item.totalSize)
+                }
+                guard let url = URL(string: item.remoteURL) else {
+                    await MainActor.run {
+                        self.queueItems[idx].status = .failed("地址无效")
+                        self.toast = "队列项地址无效：\(item.fileName)"
+                    }
+                    continue
+                }
+                do {
+                    let saved = try await MSDownload.download(
+                        url: url, saveName: item.fileName, to: Self.downloadDir()
+                    ) { recv, total in
+                        Task { @MainActor in
+                            self.queueProgress = (fileName: item.fileName, received: recv, total: total)
+                            self.updateSpeed(received: recv, total: total)
+                        }
+                    }
+                    // 校验 + 历史
+                    var verifyMsg = ""
+                    if let ok = MSDownload.verify(saved, sha256: item.sha256), !ok {
+                        verifyMsg = "；SHA256 校验失败，文件可能损坏"
+                    }
+                    HistoryStore.upsert(HistoryRecord(
+                        fileName: item.fileName, source: item.source, totalSize: item.totalSize,
+                        sha256: item.sha256, completedAt: Int64(Date().timeIntervalSince1970)))
+                    await MainActor.run {
+                        self.queueItems[idx].status = .done
+                        self.queueProgress = nil
+                        self.resetSpeed()
+                        self.refreshDownloadHistory()
+                        self.toast = "队列完成 \(item.fileName)\(verifyMsg)"
+                        self.loadGGUF(paths: [saved.path])
+                    }
+                } catch {
+                    if Task.isCancelled {
+                        await MainActor.run {
+                            self.queueItems[idx].status = .queued  // 取消 → 回到排队，可重试
+                            self.queueProgress = nil
+                            self.resetSpeed()
+                        }
+                        break
+                    }
+                    await MainActor.run {
+                        self.queueItems[idx].status = .failed(error.localizedDescription)
+                        self.queueProgress = nil
+                        self.resetSpeed()
+                        self.toast = "队列项失败 \(item.fileName)：\(error.localizedDescription)"
+                    }
+                }
+            }
+            await MainActor.run {
+                self.queueRunning = false
+                self.queueTask = nil
+                self.queueProgress = nil
+                self.resetSpeed()
+                // 全部 done 后提示
+                if !self.queueItems.isEmpty && self.queueItems.allSatisfy({ $0.status == .done }) {
+                    self.toast = "队列全部下载完成"
+                }
+            }
+        }
+    }
+
+    /// 暂停队列（当前项中断保留，其余保持排队）。
+    func pauseQueue() {
+        queueTask?.cancel()
+        queueTask = nil
+        queueRunning = false
+        queueProgress = nil
+        resetSpeed()
+        // 把 downloading 的项还原为 queued
+        for i in queueItems.indices where queueItems[i].status == .downloading {
+            queueItems[i].status = .queued
+        }
+        toast = "已暂停队列，可继续"
+    }
+
+    /// 从队列移除一项（若正在下载则先停）。
+    func removeQueueItem(_ id: String) {
+        if queueItems.first(where: { $0.id == id })?.status == .downloading {
+            queueTask?.cancel()
+            queueTask = nil
+            queueRunning = false
+            queueProgress = nil
+        }
+        queueItems.removeAll { $0.id == id }
+        if queueItems.isEmpty {
+            queueProgress = nil
+        }
+    }
+
+    /// 清空队列（已完成和排队的都清）。
+    func clearQueue() {
+        queueTask?.cancel()
+        queueTask = nil
+        queueRunning = false
+        queueItems.removeAll()
+        queueProgress = nil
+        resetSpeed()
     }
 
     /// 配对决策：返回最终要下载的文件列表（已按「主模型在前、投影器在后」排序）。

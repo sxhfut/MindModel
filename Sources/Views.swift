@@ -1413,6 +1413,10 @@ struct OnlineModelsView: View {
                 historySection
             }
 
+            if !s.queueItems.isEmpty {
+                queueSection
+            }
+
             if s.searchSource == 1 {
                 if !s.msResults.isEmpty {
                     SectionHead(title: "魔搭（\(s.msResults.count) 个）",
@@ -1517,6 +1521,86 @@ struct OnlineModelsView: View {
                     }
                 }
             }
+        }
+    }
+
+    /// 下载队列区：排队/下载中/完成/失败的文件，顺序下载，可暂停/移除/清空。
+    var queueSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                SectionHead(title: "下载队列（\(s.queueItems.count) 个）",
+                            sub: "顺序下载，一个完成自动下一个。")
+                Spacer()
+                if s.queueRunning {
+                    Button("暂停") { s.pauseQueue() }
+                        .buttonStyle(.bordered).controlSize(.small).tint(T.warn)
+                } else {
+                    Button("继续") { s.startQueue() }
+                        .buttonStyle(.borderedProminent).controlSize(.small)
+                }
+                Button("清空") { s.clearQueue() }
+                    .buttonStyle(.bordered).controlSize(.small).tint(T.bad)
+            }
+            ForEach(s.queueItems) { item in
+                Card(pad: 10) {
+                    HStack(spacing: 10) {
+                        // 状态图标
+                        Image(systemName: statusIcon(item.status))
+                            .font(.system(size: 14))
+                            .foregroundStyle(statusColor(item.status))
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(item.fileName).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                            HStack(spacing: 6) {
+                                Badge(text: item.source == "ms" ? "魔搭" : "HF", color: .secondary)
+                                Text(item.sizeText).font(.system(size: 11)).foregroundStyle(.secondary)
+                                Text(statusText(item.status))
+                                    .font(.system(size: 11)).foregroundStyle(statusColor(item.status))
+                            }
+                        }
+                        Spacer()
+                        // 当前项显示进度
+                        if item.status == .downloading, let p = s.queueProgress, p.fileName == item.fileName {
+                            VStack(alignment: .trailing, spacing: 2) {
+                                ProgressView(value: p.total > 0 ? Double(p.received) / Double(p.total) : 0)
+                                    .frame(width: 100)
+                                Text(p.total > 0 ? "\(Int(Double(p.received)/Double(p.total)*100))%" : "")
+                                    .font(.system(size: 10, design: .rounded)).foregroundStyle(.secondary)
+                            }
+                        }
+                        if item.status != .downloading {
+                            Button("移除") { s.removeQueueItem(item.id) }
+                                .buttonStyle(.bordered).controlSize(.small)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    func statusIcon(_ st: QueueItem.Status) -> String {
+        switch st {
+        case .queued: return "clock"
+        case .downloading: return "arrow.down.circle.fill"
+        case .done: return "checkmark.circle.fill"
+        case .failed: return "xmark.circle.fill"
+        }
+    }
+
+    func statusColor(_ st: QueueItem.Status) -> Color {
+        switch st {
+        case .queued: return .secondary
+        case .downloading: return T.accent
+        case .done: return T.good
+        case .failed: return T.bad
+        }
+    }
+
+    func statusText(_ st: QueueItem.Status) -> String {
+        switch st {
+        case .queued: return "排队中"
+        case .downloading: return "下载中"
+        case .done: return "已完成"
+        case .failed(let msg): return "失败：\(msg)"
         }
     }
 
@@ -1680,6 +1764,15 @@ struct MSFilesSheet: View {
             } else {
                 VStack(alignment: .leading, spacing: 8) {
                     pairingHeader
+                    // 批量加入队列
+                    HStack {
+                        Text("勾选多个文件可批量排队下载")
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("加入队列(\(s.msSelected.count))") { s.enqueueMSSelected() }
+                            .buttonStyle(.bordered).controlSize(.small)
+                            .disabled(s.msSelected.isEmpty)
+                    }
                     ScrollView {
                         VStack(spacing: 8) {
                             ForEach(s.msFiles) { f in
@@ -1773,6 +1866,21 @@ struct MSFilesSheet: View {
 
     func fileRow(_ f: MSFile) -> some View {
         HStack(spacing: 10) {
+            // 多选勾选框（辅助文件不可选）
+            if !f.isAux {
+                Button {
+                    if s.msSelected.contains(f.path) { s.msSelected.remove(f.path) }
+                    else { s.msSelected.insert(f.path) }
+                } label: {
+                    Image(systemName: s.msSelected.contains(f.path) ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 16))
+                        .foregroundStyle(s.msSelected.contains(f.path) ? T.accent : Color.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("勾选加入批量下载队列")
+            } else {
+                Image(systemName: "circle.dashed").font(.system(size: 16)).foregroundStyle(.secondary.opacity(0.5))
+            }
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(f.path).font(.system(size: 13, weight: .medium)).lineLimit(1)
@@ -1871,6 +1979,14 @@ struct HFFilesSheet: View {
             } else {
                 VStack(alignment: .leading, spacing: 8) {
                     pairingHeader
+                    HStack {
+                        Text("勾选多个文件可批量排队下载")
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("加入队列(\(s.hfSelected.count))") { s.enqueueHFSelected() }
+                            .buttonStyle(.bordered).controlSize(.small)
+                            .disabled(s.hfSelected.isEmpty)
+                    }
                     ScrollView {
                         VStack(spacing: 8) {
                             ForEach(s.hfFiles) { f in
@@ -1963,6 +2079,20 @@ struct HFFilesSheet: View {
 
     func fileRow(_ f: HFFile) -> some View {
         HStack(spacing: 10) {
+            if !f.isAux {
+                Button {
+                    if s.hfSelected.contains(f.path) { s.hfSelected.remove(f.path) }
+                    else { s.hfSelected.insert(f.path) }
+                } label: {
+                    Image(systemName: s.hfSelected.contains(f.path) ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 16))
+                        .foregroundStyle(s.hfSelected.contains(f.path) ? T.accent : Color.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("勾选加入批量下载队列")
+            } else {
+                Image(systemName: "circle.dashed").font(.system(size: 16)).foregroundStyle(.secondary.opacity(0.5))
+            }
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(f.path).font(.system(size: 13, weight: .medium)).lineLimit(1)
