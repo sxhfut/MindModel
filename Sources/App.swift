@@ -216,6 +216,8 @@ final class AppState: ObservableObject {
     @Published var hfSelected: Set<String> = []
     /// 正在查看详情的模型（非空时弹出详情层）
     @Published var detailModel: MSModel?
+    /// 术语词典弹层是否显示
+    @Published var showTermDict = false
     /// 详情内容（点详情后异步加载）
     @Published var modelDetail: ModelDetail?
     @Published var detailLoading = false

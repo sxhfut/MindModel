@@ -1459,6 +1459,9 @@ struct OnlineModelsView: View {
         .sheet(item: $s.detailModel) { m in
             ModelDetailSheet(model: m)
         }
+        .sheet(isPresented: $s.showTermDict) {
+            TermDictionarySheet()
+        }
     }
 
     /// 断点续传区：列出磁盘上未下完的文件，一键继续或删除。
@@ -1702,6 +1705,8 @@ struct HFRow: View {
                         Label("\(model.likes) 赞", systemImage: "heart")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                     }
+                    // 名字术语解读（参数量/量化/能力，hover 看解释）
+                    NameDecodeLine(name: model.modelId)
                     // 一句话简介（本地从 modelId/tags 推断）
                     if !oneLineIntro.isEmpty {
                         Text(oneLineIntro)
@@ -1743,6 +1748,8 @@ struct MSRow: View {
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                // 名字术语解读（参数量/量化/能力，hover 看解释）
+                NameDecodeLine(name: model.name)
                 // 一句话简介（本地推断）
                 if !model.oneLineIntro.isEmpty {
                     Text(model.oneLineIntro)
@@ -2069,7 +2076,8 @@ struct MSFilesSheet: View {
                     }
                 }
                 Text(f.sizeGB).font(.system(size: 12)).foregroundStyle(.secondary)
-                // 配对提示：点这个文件会带上谁（辅助文件无配对，直接提示不可下载）
+                // 文件名术语解读（量化/精度/能力，hover 看解释）
+                NameDecodeLine(name: f.path)
                 if f.isAux {
                     Text("校准/分词辅助文件，无需下载").font(.system(size: 11)).foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -2289,6 +2297,8 @@ struct HFFilesSheet: View {
                     }
                 }
                 Text(f.sizeGB).font(.system(size: 12)).foregroundStyle(.secondary)
+                // 文件名术语解读（量化/精度/能力，hover 看解释）
+                NameDecodeLine(name: f.path)
                 if f.isAux {
                     Text("校准/分词辅助文件，无需下载").font(.system(size: 11)).foregroundStyle(.secondary)
                         .lineLimit(1)
